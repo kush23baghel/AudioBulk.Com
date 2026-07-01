@@ -1,0 +1,53 @@
+# ── Dependencies ──────────────────────────────────────────
+node_modules
+.pnp
+.pnp.js
+
+# ── Build output ──────────────────────────────────────────
+dist
+dist-ssr
+*.local
+
+# ── Environment & secrets (NEVER commit) ─────────────────
+.env
+.env.*
+*.env
+!.env.example
+
+# ── Logs ─────────────────────────────────────────────────
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ── Editor directories ────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# ── Dev/QA artifacts (not for public repo) ───────────────
+scratch/
+.agent/
+openspec/
+test-results/
+qa_report.json
+Capture.PNG
+
+# ── Dev-only scripts ─────────────────────────────────────
+fix.mjs
+generate-tools.mjs
+run-tests.cjs
+test-ai.mjs
+test_swarm.mjs
+tests/
+scripts/
