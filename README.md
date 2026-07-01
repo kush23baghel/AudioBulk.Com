@@ -8,7 +8,7 @@
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite)](https://vitejs.dev)
 [![FFmpeg.wasm](https://img.shields.io/badge/FFmpeg-WASM-green?logo=ffmpeg)](https://ffmpegwasm.netlify.app)
 [![PWA](https://img.shields.io/badge/PWA-ready-purple)](https://web.dev/progressive-web-apps/)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/audiobulk.com)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/kush273eagle/AudioBulk.Com)
 
 **[🌐 Live Site](https://audiobulk.com)** · **[📋 All Tools](#-tools)**
 
@@ -144,7 +144,7 @@ YouTube & Marketing: YouTube Video Ideas, YouTube Description Generator, YouTube
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/audiobulk.com.git
+git clone https://github.com/kush273eagle/AudioBulk.Com.git
 cd audiobulk.com
 
 # Install dependencies
@@ -178,7 +178,7 @@ npm run build
 
 ## ☁️ One-Click Deploy to Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/audiobulk.com)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/kush273eagle/AudioBulk.Com)
 
 > **Important:** The `vercel.json` in this repo sets the required `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` headers. These are mandatory for FFmpeg.wasm (`SharedArrayBuffer`). Do not remove them.
 
