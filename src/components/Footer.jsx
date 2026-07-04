@@ -45,7 +45,7 @@ export default function Footer() {
             </Link>
 
             <p className="text-slate-400 text-sm leading-relaxed max-w-sm">
-              The Swiss Army knife of media processing. 70 free browser-based tools for audio, video, GIF, AI writing, marketing and utilities.
+              70 browser-local tools for audio, video, GIF, AI writing, marketing and utilities. No uploads. No servers. No paywalls.
             </p>
 
             {/* Privacy pledge */}
@@ -55,14 +55,14 @@ export default function Footer() {
             >
               <i className="fa-solid fa-shield-halved text-emerald-400 mt-0.5 text-sm flex-shrink-0"></i>
               <p className="text-xs text-slate-300 leading-relaxed">
-                <span className="font-semibold text-emerald-400">Privacy Pledge:</span> Your files never leave your device. All processing runs locally in your browser via WebAssembly.
+                <span className="font-semibold text-emerald-400">Privacy Pledge:</span> Your files never leave your device. All processing runs 100% locally in your browser via WebAssembly.
               </p>
             </div>
 
             {/* Social icons */}
             <div className="flex gap-3">
               {[
-                { icon: 'fa-github', href: 'https://github.com', label: 'GitHub' },
+                { icon: 'fa-github', href: 'https://github.com/kush23baghel/AudioBulk.Com', label: 'GitHub' },
                 { icon: 'fa-x-twitter', href: 'https://twitter.com', label: 'Twitter' },
                 { icon: 'fa-youtube', href: 'https://youtube.com', label: 'YouTube' },
               ].map(({ icon, href, label }) => (
@@ -103,10 +103,8 @@ export default function Footer() {
             </div>
           ))}
 
-          {/* Live stats mini column */}
-          <div className="md:col-span-1">
-            {/* intentionally slim for layout balance */}
-          </div>
+          {/* Spacer */}
+          <div className="md:col-span-1" />
         </div>
 
         {/* Bottom bar */}
@@ -118,7 +116,8 @@ export default function Footer() {
             © {year} AudioBulk — All processing is 100% client-side.
           </p>
           <p className="text-xs text-slate-600 flex items-center gap-1.5">
-            Built with <i className="fa-solid fa-bolt text-amber-500/70 text-[10px]"></i> for creators everywhere.
+            <i className="fa-solid fa-shield-halved text-emerald-500/50 text-[10px]"></i>
+            No uploads. No tracking. No paywalls.
           </p>
         </div>
       </div>

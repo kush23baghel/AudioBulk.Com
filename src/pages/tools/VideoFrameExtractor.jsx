@@ -181,7 +181,7 @@ export default function VideoFrameExtractor() {
               Zip & Download
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto overscroll-contain p-1 bg-[#0b1426]/80 backdrop-blur-md shadow-inner rounded-xl border border-white/10">
+          <div data-lenis-prevent="true" className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto overscroll-contain p-1 bg-[#0b1426]/80 backdrop-blur-md shadow-inner rounded-xl border border-white/10">
             {outputImages.map((img, index) => (
               <a
                 key={index}

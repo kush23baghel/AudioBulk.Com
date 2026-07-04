@@ -121,7 +121,7 @@ export default function FaqGenerator() {
               <p>FAQs will appear here</p>
             </div>
           ) : (
-            <div className="space-y-4 h-[24rem] overflow-y-auto overscroll-contain pr-2 custom-scrollbar">
+            <div data-lenis-prevent="true" className="space-y-4 h-[24rem] overflow-y-auto overscroll-contain pr-2 custom-scrollbar">
               {faqs.map((faq, idx) => (
                 <div key={idx} className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-sky-300 transition-colors">
                   <h3 className="text-white font-medium text-lg mb-2 flex items-start gap-3">

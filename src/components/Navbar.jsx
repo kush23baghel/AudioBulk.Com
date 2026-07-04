@@ -24,7 +24,7 @@ export default function Navbar() {
     { name: 'AI Writers', path: '/all-tools?cat=ai-generators', icon: 'fa-wand-magic-sparkles' },
     { name: 'Audio', path: '/all-tools?cat=audio', icon: 'fa-music' },
     { name: 'Video', path: '/all-tools?cat=video', icon: 'fa-video' },
-    { name: 'GIF', path: '/all-tools?cat=gif', icon: 'fa-image' },
+    { name: 'GIF', path: '/all-tools?cat=gif-image', icon: 'fa-image' },
   ];
 
   const isActive = (path) => {
@@ -104,13 +104,15 @@ export default function Navbar() {
             >
               <i className="fa-solid fa-gear"></i>
             </button>
-            <Link
-              to="/all-tools"
-              className="btn-primary-glow inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl animate-glow-pulse"
-            >
-              <i className="fa-solid fa-bolt text-xs"></i>
-              Explore 70 Tools
-            </Link>
+            {location.pathname !== '/all-tools' && (
+              <Link
+                to="/all-tools"
+                className="btn-primary-glow inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl animate-glow-pulse"
+              >
+                <i className="fa-solid fa-bolt text-xs"></i>
+                Explore 70 Tools
+              </Link>
+            )}
           </div>
 
           {/* Mobile Menu Button */}

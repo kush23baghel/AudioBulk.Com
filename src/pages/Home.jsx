@@ -112,7 +112,7 @@ const FEATURES = [
     bg: 'bg-violet-500/10',
     border: 'border-violet-500/20',
     title: 'AI-Powered',
-    desc: '30 AI writing tools powered by DeepSeek via OpenRouter. Story generators, plot makers, and more.',
+    desc: '30+ intelligent AI writing tools. Story generators, plot makers, script writers, and more.',
   },
 ];
 

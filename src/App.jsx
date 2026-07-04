@@ -37,6 +37,7 @@ const PasswordGenerator = lazy(() => import('./pages/tools/PasswordGenerator'));
 const TextSimilarity = lazy(() => import('./pages/tools/TextSimilarity'));
 const FaqGenerator = lazy(() => import('./pages/tools/FaqGenerator'));
 const TextRephrase = lazy(() => import('./pages/tools/TextRephrase'));
+const UuidGenerator = lazy(() => import('./pages/tools/UuidGenerator'));
 
 const BulkAudioConverter = lazy(() => import('./pages/tools/BulkAudioConverter'));
 const BulkVideoCompressor = lazy(() => import('./pages/tools/BulkVideoCompressor'));
@@ -137,6 +138,7 @@ export default function App() {
           <Route path="tools/text-similarity" element={<TextSimilarity />} />
           <Route path="tools/faq-generator" element={<FaqGenerator />} />
           <Route path="tools/text-rephrase" element={<TextRephrase />} />
+          <Route path="tools/uuid-generator" element={<UuidGenerator />} />
 
           {/* AI Tools */}
           <Route path="tools/story-plot-generator" element={<StoryPlotGenerator />} />

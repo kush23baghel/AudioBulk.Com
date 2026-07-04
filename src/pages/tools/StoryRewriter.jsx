@@ -86,7 +86,7 @@ export default function StoryRewriter() {
           {/* Right Column: Output */}
           <div className="flex flex-col space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-manrope">Generated Result</label>
-            <div className="w-full h-[250px] rounded-2xl bg-slate-950/60 border border-white/5 p-5 text-sm text-slate-300 overflow-y-auto overscroll-contain whitespace-pre-wrap leading-relaxed relative font-sans">
+            <div data-lenis-prevent="true" className="w-full h-[250px] rounded-2xl bg-slate-950/60 border border-white/5 p-5 text-sm text-slate-300 overflow-y-auto overscroll-contain whitespace-pre-wrap leading-relaxed relative font-sans">
               {isGenerating ? (
                 <div className="flex items-center justify-center h-full text-violet-400/50">
                   <div className="flex flex-col items-center gap-3">

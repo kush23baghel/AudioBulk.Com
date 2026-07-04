@@ -658,5 +658,13 @@ export const toolsList = [
     desc: "Adjust flow or structure of input sentences.",
     icon: "fa-arrows-rotate",
     path: "/tools/text-rephrase"
+  },
+  {
+    id: "uuid-generator",
+    categoryId: "utilities",
+    name: "UUID / GUID Generator",
+    desc: "Generate random, secure Version 4 UUIDs instantly in bulk.",
+    icon: "fa-fingerprint",
+    path: "/tools/uuid-generator"
   }
 ];

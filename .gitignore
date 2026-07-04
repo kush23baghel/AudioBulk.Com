@@ -51,3 +51,5 @@ test-ai.mjs
 test_swarm.mjs
 tests/
 scripts/
+
+.vercel
