@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./ui/tokens.css";
 @plugin "daisyui";
 @source "../index.html";
 @source "./**/*.{js,ts,jsx,tsx}";

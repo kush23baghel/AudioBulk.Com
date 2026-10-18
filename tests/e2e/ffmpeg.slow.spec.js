@@ -41,8 +41,8 @@ test('@slow ffmpeg converts a real audio file end-to-end', async ({ page }) => {
   // File should appear in the queue.
   await expect(page.getByText('silence.wav')).toBeVisible();
 
-  await page.getByRole('button', { name: /Start Processing/i }).click();
+  await page.getByRole('button', { name: /^Convert 1 file/i }).click();
 
-  // Conversion completes when a download affordance appears (status becomes 'done').
-  await expect(page.getByRole('button', { name: /Download All/i })).toBeVisible({ timeout: 150_000 });
+  // Conversion completes when the main Download button appears (status becomes 'done').
+  await expect(page.getByRole('button', { name: /^Download$/i })).toBeVisible({ timeout: 150_000 });
 });

@@ -1,0 +1,89 @@
+/* ============================================================
+   AudioBulk redesign tokens: "Quiet tool" direction, light only.
+   Wine is the one accent: it marks what to click and what is selected.
+   Cream is the page, paper is the card, sand (#F5EBD0) is for
+   chips, selected states and soft highlights.
+   ============================================================ */
+
+@theme {
+  --color-wine: #7F011F;
+  --color-wine-deep: #5E0117;
+  --color-wine-soft: #F7E6E3;
+
+  --color-cream: #FDFAF3;
+  --color-paper: #FFFEFA;
+  --color-sand: #F5EBD0;
+  --color-line: #ECE2CA;
+  --color-line-strong: #DCCDA8;
+
+  --color-ink: #2B1A1C;
+  --color-muted: #6F5F5B;
+
+  --color-ok: #2E6B3A;
+  --color-ok-soft: #E4F0E1;
+  --color-bad: #A8321D;
+  --color-bad-soft: #FBE7E1;
+
+  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Figtree', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* The redesigned shell. Scoped so the old dark pages are untouched until approval. */
+.ab-shell {
+  color-scheme: light;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.ab-shell h1,
+.ab-shell h2,
+.ab-shell h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.ab-shell :focus-visible {
+  outline: 3px solid var(--color-wine);
+  outline-offset: 2px;
+}
+
+/* Quality slider: native range input, restyled. */
+.ab-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-wine) var(--fill, 50%), var(--color-line) var(--fill, 50%));
+  cursor: pointer;
+}
+.ab-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-paper);
+  border: 3px solid var(--color-wine);
+  box-shadow: 0 1px 3px rgb(43 26 28 / 0.2);
+}
+.ab-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-paper);
+  border: 3px solid var(--color-wine);
+}
+.ab-range:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ab-shell *,
+  .ab-shell *::before,
+  .ab-shell *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

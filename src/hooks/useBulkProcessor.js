@@ -164,18 +164,24 @@ export default function useBulkProcessor() {
           result.extra.forEach(processBlobResult);
         }
 
-        // Update item status to done with output urls appended to outputs array
+        // Update item status to done. A re-run (forceAll) replaces the old outputs instead of
+        // stacking duplicates next to them; their blob URLs are revoked.
         setQueue((prev) =>
-          prev.map((q) =>
-            q.id === item.id
-              ? {
-                  ...q,
-                  status: 'done',
-                  progress: 100,
-                  outputs: [...(q.outputs || []), ...outputsToAdd],
-                }
-              : q
-          )
+          prev.map((q) => {
+            if (q.id !== item.id) return q;
+            if (forceAll) {
+              (q.outputs || []).forEach((out) => {
+                URL.revokeObjectURL(out.url);
+                createdUrlsRef.current.delete(out.url);
+              });
+            }
+            return {
+              ...q,
+              status: 'done',
+              progress: 100,
+              outputs: forceAll ? outputsToAdd : [...(q.outputs || []), ...outputsToAdd],
+            };
+          })
         );
       } catch (err) {
         if (err.message === "Aborted" || signal.aborted) {

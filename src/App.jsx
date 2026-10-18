@@ -1,6 +1,7 @@
 import { lazy } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
+import Shell from './ui/Shell';
 import Home from './pages/Home';
 import AllTools from './pages/AllTools';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -88,6 +89,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Redesigned pages (light "Quiet tool" look). Tools move here one by one as they are rebuilt. */}
+        <Route element={<Shell />}>
+          <Route path="tools/bulk-audio-converter" element={<BulkAudioConverter />} />
+        </Route>
+
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="all-tools" element={<AllTools />} />
@@ -95,7 +101,6 @@ export default function App() {
           <Route path="terms" element={<TermsOfService />} />
           
           {/* Phase 1 Tools */}
-          <Route path="tools/bulk-audio-converter" element={<BulkAudioConverter />} />
           <Route path="tools/bulk-audio-compressor" element={<BulkAudioCompressor />} />
           <Route path="tools/bulk-video-compressor" element={<BulkVideoCompressor />} />
           <Route path="tools/bulk-video-to-audio" element={<BulkVideoToAudioConverter />} />
