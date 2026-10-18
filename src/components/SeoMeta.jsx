@@ -1,4 +1,3 @@
-import React from 'react';
 import { Helmet } from 'react-helmet-async';
 
 export default function SeoMeta({ title, description, url = 'https://audiobulk.com', image = 'https://audiobulk.com/og-image.png' }) {

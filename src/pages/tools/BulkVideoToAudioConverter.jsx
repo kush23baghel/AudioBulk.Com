@@ -28,7 +28,7 @@ export default function BulkVideoToAudioConverter() {
       };
       ffmpeg.on('log', probeHandler);
       // -i with no output args emits stream info then exits with error code — that's expected.
-      try { await ffmpeg.exec(['-i', inputName]); } catch (_) { /* probe always "fails" — that's fine */ }
+      try { await ffmpeg.exec(['-i', inputName]); } catch { /* probe always "fails" — that's fine */ }
       ffmpeg.off('log', probeHandler);
 
       if (!hasAudioStream) {

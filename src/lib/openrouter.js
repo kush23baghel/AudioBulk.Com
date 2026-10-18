@@ -1,5 +1,7 @@
 export async function generateAIResponse(userPrompt, systemPrompt, signal = null) {
-  const apiKey = localStorage.getItem('openRouterApiKey') || import.meta.env.VITE_OPENROUTER_API_KEY;
+  // Bring-your-own-key only. Never read the key from import.meta.env — Vite inlines
+  // those values into the public bundle, which would publish the key to every visitor.
+  const apiKey = localStorage.getItem('openRouterApiKey');
   const model = localStorage.getItem('openRouterModel') || import.meta.env.VITE_OPENROUTER_MODEL || "meta-llama/llama-3-8b-instruct:free";
 
   if (!apiKey) {
@@ -40,9 +42,9 @@ export async function generateAIResponse(userPrompt, systemPrompt, signal = null
     });
   } catch (err) {
     if (err.name === 'AbortError' || err.name === 'TimeoutError') {
-      throw new Error("The AI took too long to respond or the request was aborted.");
+      throw new Error("The AI took too long to respond or the request was aborted.", { cause: err });
     }
-    throw new Error("Network error. Please check your internet connection.");
+    throw new Error("Network error. Please check your internet connection.", { cause: err });
   }
 
   if (!response.ok) {
@@ -55,6 +57,6 @@ export async function generateAIResponse(userPrompt, systemPrompt, signal = null
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "No response generated.";
   } catch (err) {
-    throw new Error("Received an invalid response from OpenRouter (Network Proxy Error).");
+    throw new Error("Received an invalid response from OpenRouter (Network Proxy Error).", { cause: err });
   }
 }

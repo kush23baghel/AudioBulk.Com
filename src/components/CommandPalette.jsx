@@ -11,10 +11,22 @@ export default function CommandPalette() {
 
   // Keyboard shortcut listener (Cmd+K / Ctrl+K) & Custom Event Listener
   useEffect(() => {
+    // Opening always starts from a clean slate — reset here rather than in an
+    // effect on isOpen, which would cascade an extra render on every open.
+    const openPalette = () => {
+      setQuery('');
+      setSelectedIndex(0);
+      setIsOpen(true);
+    };
+
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setIsOpen((open) => !open);
+        if (isOpen) {
+          setIsOpen(false);
+        } else {
+          openPalette();
+        }
       }
       if (e.key === 'Escape' && isOpen) {
         setIsOpen(false);
@@ -22,12 +34,12 @@ export default function CommandPalette() {
     };
 
     const handleOpenEvent = () => {
-      setIsOpen(true);
+      openPalette();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('open-command-palette', handleOpenEvent);
-    
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('open-command-palette', handleOpenEvent);
@@ -36,11 +48,9 @@ export default function CommandPalette() {
 
   // Focus input when opened
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-      setQuery('');
-      setSelectedIndex(0);
-    }
+    if (!isOpen) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
   }, [isOpen]);
 
   // Filter tools

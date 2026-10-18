@@ -270,7 +270,7 @@ export default function Home() {
             Recently Used
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {recentTools.map((tool, idx) => {
+            {recentTools.map((tool) => {
               // Find the matching category to get the correct icon class color
               const cat = toolCategories.find(c => c.title === tool.category);
               const iconClass = cat ? ICON_CLASSES[cat.id] : 'icon-utilities';

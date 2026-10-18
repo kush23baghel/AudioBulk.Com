@@ -46,10 +46,10 @@ Capture.PNG
 # ── Dev-only scripts ─────────────────────────────────────
 fix.mjs
 generate-tools.mjs
-run-tests.cjs
-test-ai.mjs
-test_swarm.mjs
-tests/
-scripts/
+
+# ── Test artifacts (the tests/ suite itself IS tracked) ──
+test-results/
+playwright-report/
+tests/**/test-screenshots/
 
 .vercel

@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import AllTools from './pages/AllTools';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
+import NotFound from './pages/NotFound';
 
 // Tool Pages
 const VocalRemover = lazy(() => import('./pages/tools/VocalRemover'));
@@ -172,8 +173,8 @@ export default function App() {
           <Route path="tools/yt-channel-name" element={<YtChannelName />} />
           <Route path="tools/newsletter-generator" element={<NewsletterGenerator />} />
 
-          {/* Fallback to Home */}
-          <Route path="*" element={<Home />} />
+          {/* Real 404 (noindex) instead of silently serving Home at every unknown URL */}
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </BrowserRouter>

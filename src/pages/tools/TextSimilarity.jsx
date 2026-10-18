@@ -6,17 +6,17 @@ export default function TextSimilarity() {
   const [text2, setText2] = useState('');
   const [debouncedText1, setDebouncedText1] = useState('');
   const [debouncedText2, setDebouncedText2] = useState('');
-  const [isCalculating, setIsCalculating] = useState(false);
 
   useEffect(() => {
-    setIsCalculating(true);
     const timer = setTimeout(() => {
       setDebouncedText1(text1);
       setDebouncedText2(text2);
-      setIsCalculating(false);
     }, 400);
     return () => clearTimeout(timer);
   }, [text1, text2]);
+
+  // Derived, not stored: we're "calculating" exactly while the debounce is pending.
+  const isCalculating = text1 !== debouncedText1 || text2 !== debouncedText2;
 
   const similarity = useMemo(() => {
     if (!debouncedText1.trim() && !debouncedText2.trim()) return 0;

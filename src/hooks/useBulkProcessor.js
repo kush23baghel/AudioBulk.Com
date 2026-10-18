@@ -13,20 +13,24 @@ export default function useBulkProcessor() {
 
   // Revoke all created URLs and abort processing on unmount to prevent memory leaks
   useEffect(() => {
+    // Capture the Set itself (stable for the component's lifetime) so cleanup does
+    // not read a ref that may have been reassigned by then.
+    const createdUrls = createdUrlsRef.current;
+
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
       terminateFFmpeg();
-      
-      createdUrlsRef.current.forEach((url) => {
+
+      createdUrls.forEach((url) => {
         try {
           URL.revokeObjectURL(url);
         } catch (e) {
           console.error('Failed to revoke URL on unmount:', e);
         }
       });
-      createdUrlsRef.current.clear();
+      createdUrls.clear();
     };
   }, []);
 

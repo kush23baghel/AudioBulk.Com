@@ -1,11 +1,49 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { toolsList } from './src/data/tools.js'
+
+const SITE_URL = 'https://audiobulk.com'
+
+// Cross-origin isolation headers. ffmpeg.wasm needs these, and they must match
+// vercel.json so `vite dev` and `vite preview` behave like production.
+const crossOriginIsolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'credentialless',
+}
+
+// Generate sitemap.xml from the same tool list the router and UI use, so it can
+// never drift out of sync with the actual set of pages.
+function sitemapPlugin() {
+  return {
+    name: 'audiobulk-sitemap',
+    apply: 'build',
+    generateBundle() {
+      const staticPaths = ['/', '/all-tools', '/privacy', '/terms']
+      const paths = [...staticPaths, ...toolsList.map((tool) => tool.path)]
+      const lastmod = new Date().toISOString().slice(0, 10)
+
+      const urls = paths
+        .map((path) => {
+          const priority = path === '/' ? '1.0' : path === '/all-tools' ? '0.9' : '0.8'
+          return `  <url>\n    <loc>${SITE_URL}${path}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>${priority}</priority>\n  </url>`
+        })
+        .join('\n')
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sitemap.xml',
+        source: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,
+      })
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    sitemapPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png'],
@@ -39,10 +77,11 @@ export default defineConfig({
   ],
   server: {
     port: 9000,
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'credentialless',
-    },
+    headers: crossOriginIsolationHeaders,
+  },
+  preview: {
+    port: 4173,
+    headers: crossOriginIsolationHeaders,
   },
   optimizeDeps: {
     exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],

@@ -30,7 +30,7 @@ export default function BulkAudioConverter() {
         if (message.includes('Audio:')) hasAudioStream = true;
       };
       ffmpeg.on('log', probeHandler);
-      try { await ffmpeg.exec(['-i', inputName]); } catch (_) { /* expected — no output file */ }
+      try { await ffmpeg.exec(['-i', inputName]); } catch { /* expected — no output file */ }
       ffmpeg.off('log', probeHandler);
 
       if (!hasAudioStream) {

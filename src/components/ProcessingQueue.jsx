@@ -1,18 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { downloadFiles } from '../lib/download';
 import { saveAs } from 'file-saver';
 
 function ImagePreview({ file }) {
-  const [url, setUrl] = useState('');
+  const url = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
 
+  // Revoke on unmount / when the file changes, so previews don't leak blob URLs.
   useEffect(() => {
-    if (!file) return;
-    const objectUrl = URL.createObjectURL(file);
-    setUrl(objectUrl);
-    return () => {
-      URL.revokeObjectURL(objectUrl);
-    };
-  }, [file]);
+    if (!url) return;
+    return () => URL.revokeObjectURL(url);
+  }, [url]);
 
   if (!url) return null;
   return <img src={url} alt="preview" className="w-full h-full object-cover" />;

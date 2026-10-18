@@ -4,16 +4,14 @@ import { Link } from 'react-router-dom';
 export default function WordCounter() {
   const [text, setText] = useState('');
   const [debouncedText, setDebouncedText] = useState('');
-  const [isCalculating, setIsCalculating] = useState(false);
 
   useEffect(() => {
-    setIsCalculating(true);
-    const timer = setTimeout(() => {
-      setDebouncedText(text);
-      setIsCalculating(false);
-    }, 400); // 400ms debounce
+    const timer = setTimeout(() => setDebouncedText(text), 400); // 400ms debounce
     return () => clearTimeout(timer);
   }, [text]);
+
+  // Derived, not stored: we're "calculating" exactly while the debounce is pending.
+  const isCalculating = text !== debouncedText;
 
   const charCountWithSpaces = debouncedText.length;
   const charCountWithoutSpaces = debouncedText.replace(/\s/g, '').length;
