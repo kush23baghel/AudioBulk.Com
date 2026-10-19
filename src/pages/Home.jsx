@@ -29,7 +29,7 @@ const openSearch = () => window.dispatchEvent(new Event('open-command-palette'))
 // A rounded panel in the deeper cream, so card grids stand out without full-width stripes.
 function Band({ children }) {
   return (
-    <div className="mx-auto max-w-[100rem] px-4 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6">
       <div className="rounded-3xl bg-sunken px-5 py-10 sm:px-8">{children}</div>
     </div>
   );
@@ -109,7 +109,7 @@ export default function Home() {
       <SeoMeta />
 
       {/* Hero */}
-      <section className="mx-auto grid max-w-[100rem] items-center gap-10 px-4 pb-12 pt-10 sm:px-6 sm:pt-14 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-12 pt-10 sm:px-6 sm:pt-14 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <motion.div
           className="space-y-6"
           initial={{ opacity: 0, y: 14 }}
@@ -170,7 +170,7 @@ export default function Home() {
       </Band>
 
       {/* Popular */}
-      <section className="mx-auto max-w-[100rem] space-y-6 px-4 py-14 sm:px-6" aria-labelledby="popular-title">
+      <section className="mx-auto max-w-6xl space-y-6 px-4 py-14 sm:px-6" aria-labelledby="popular-title">
         <Reveal className="flex flex-wrap items-end justify-between gap-3">
           <h2 id="popular-title" className="text-3xl font-bold">Most popular</h2>
           <Link to="/all-tools" viewTransition className="group inline-flex items-center gap-1 font-semibold text-wine">
@@ -202,7 +202,7 @@ export default function Home() {
         </section>
       </Band>
 
-      <div className="mx-auto max-w-[100rem] space-y-12 px-4 pb-16 pt-14 sm:px-6">
+      <div className="mx-auto max-w-6xl space-y-12 px-4 pb-16 pt-14 sm:px-6">
         {/* Promise */}
         <Reveal as="section" aria-labelledby="promise-title" className="rounded-2xl bg-wine px-6 py-10 text-paper sm:px-10">
           <h2 id="promise-title" className="max-w-2xl text-3xl font-bold">No ads. Ever.</h2>

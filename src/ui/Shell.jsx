@@ -7,7 +7,7 @@ import { MotionConfig } from 'framer-motion';
 import Lenis from 'lenis';
 import 'lenis/dist/lenis.css';
 import { Toaster } from 'sonner';
-import { Menu, X, LoaderCircle, Search, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Menu, X, LoaderCircle, Search, Settings, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { toolsList, toolCategories } from '../data/tools';
 import useRecentTools from '../hooks/useRecentTools';
 import useMediaQuery from '../hooks/useMediaQuery';
@@ -20,9 +20,23 @@ import RightRail from './RightRail';
 const openSearch = () => window.dispatchEvent(new Event('open-command-palette'));
 const openSettings = () => window.dispatchEvent(new Event('open-ai-settings'));
 
-// Desktop left sidebar shown or hidden; remembered in this browser.
-const sidebarStore = createLocalStore('audiobulk_sidebar_open', true, (v) => typeof v === 'boolean');
+// Desktop sidebars shown or hidden; remembered in this browser.
+const isBool = (v) => typeof v === 'boolean';
+const sidebarStore = createLocalStore('audiobulk_sidebar_open', true, isBool);
 const toggleSidebar = () => sidebarStore.set((open) => !open);
+const rightbarStore = createLocalStore('audiobulk_rightbar_open', true, isBool);
+const toggleRightbar = () => rightbarStore.set((open) => !open);
+
+// Grid columns for each sidebar combination (written out in full so Tailwind can see every class).
+// Below 1280px the right sidebar is never a column; its helpers sit under the page instead.
+const GRID = {
+  'open-open': 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_320px]',
+  'open-closed': 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_0px]',
+  'closed-open': 'lg:grid-cols-[0px_minmax(0,1fr)] xl:grid-cols-[0px_minmax(0,1fr)_320px]',
+  'closed-closed': 'lg:grid-cols-[0px_minmax(0,1fr)] xl:grid-cols-[0px_minmax(0,1fr)_0px]',
+};
+
+const TOGGLE_BTN = 'hidden rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-sand hover:text-wine lg:block';
 
 // Ctrl/⌘ + B hides or shows the sidebar, except while typing in a field.
 function useSidebarShortcut() {
@@ -94,8 +108,12 @@ export default function Shell() {
   const { addRecentTool } = useRecentTools();
   const lenisRef = useSmoothScroll();
   const wide = useMediaQuery('(min-width: 1280px)');
+  const lgUp = useMediaQuery('(min-width: 1024px)');
   const sidebarOpen = useStore(sidebarStore);
+  const rightbarOpen = useStore(rightbarStore);
   useSidebarShortcut();
+  // On phones the helpers always show under the page; the right toggle only exists from laptops up.
+  const showRailBelow = !wide && (rightbarOpen || !lgUp);
 
   useEffect(() => {
     if (lenisRef.current) lenisRef.current.scrollTo(0, { immediate: true });
@@ -125,19 +143,19 @@ export default function Shell() {
               >
                 <Menu size={22} aria-hidden="true" />
               </button>
-              {/* Desktop: show or hide the left sidebar. */}
+              <Logo />
+              {/* Desktop: show or hide the left sidebar (sits right after the logo). */}
               <button
                 type="button"
                 onClick={toggleSidebar}
                 aria-expanded={sidebarOpen}
                 aria-controls="left-sidebar"
-                aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-                title={`${sidebarOpen ? 'Hide' : 'Show'} sidebar (Ctrl+B)`}
-                className="-ml-1 hidden rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-sand hover:text-wine lg:block"
+                aria-label={sidebarOpen ? 'Hide left sidebar' : 'Show left sidebar'}
+                title={`${sidebarOpen ? 'Hide' : 'Show'} left sidebar (Ctrl+B)`}
+                className={`lg:ml-auto ${TOGGLE_BTN}`}
               >
                 {sidebarOpen ? <PanelLeftClose size={20} aria-hidden="true" /> : <PanelLeftOpen size={20} aria-hidden="true" />}
               </button>
-              <Logo />
             </div>
             <button
               type="button"
@@ -158,15 +176,26 @@ export default function Shell() {
             >
               <Settings size={20} aria-hidden="true" />
             </button>
+            {/* Desktop: show or hide the right sidebar (tips, next steps, favorites). */}
+            <button
+              type="button"
+              onClick={toggleRightbar}
+              aria-expanded={rightbarOpen}
+              aria-controls="right-sidebar"
+              aria-label={rightbarOpen ? 'Hide right sidebar' : 'Show right sidebar'}
+              title={`${rightbarOpen ? 'Hide' : 'Show'} tips and favorites`}
+              className={`-mr-1 ${TOGGLE_BTN}`}
+            >
+              {rightbarOpen ? <PanelRightClose size={20} aria-hidden="true" /> : <PanelRightOpen size={20} aria-hidden="true" />}
+            </button>
           </div>
         </header>
 
-        {/* The sidebar column slides between 264px and 0 when toggled (grid columns animate). */}
+        {/* Sidebar columns slide open and shut when toggled (grid columns animate). With both shut,
+            the page sits centred at its normal width. */}
         <div
           className={`flex-1 transition-[grid-template-columns] duration-300 ease-out-soft motion-reduce:transition-none lg:grid ${
-            sidebarOpen
-              ? 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_320px]'
-              : 'lg:grid-cols-[0px_minmax(0,1fr)] xl:grid-cols-[0px_minmax(0,1fr)_320px]'
+            GRID[`${sidebarOpen ? 'open' : 'closed'}-${rightbarOpen ? 'open' : 'closed'}`]
           }`}
         >
           <aside
@@ -194,7 +223,7 @@ export default function Shell() {
             </Suspense>
 
             {/* Below extra-wide screens, the right sidebar's helpers come after the page (rendered once, never twice). */}
-            {!wide && (
+            {showRailBelow && (
               <div className="mx-auto max-w-4xl px-4 pb-16 sm:px-6">
                 <RightRail />
               </div>
@@ -203,11 +232,13 @@ export default function Shell() {
 
           {wide && (
             <aside
+              id="right-sidebar"
               aria-label="Help for this page"
               data-lenis-prevent=""
-              className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto border-l border-line p-4"
+              inert={!rightbarOpen}
+              className={`sticky top-16 h-[calc(100vh-4rem)] overflow-x-hidden overflow-y-auto ${rightbarOpen ? 'border-l border-line' : ''}`}
             >
-              <RightRail />
+              <div className="w-[320px] p-4"><RightRail /></div>
             </aside>
           )}
         </div>
