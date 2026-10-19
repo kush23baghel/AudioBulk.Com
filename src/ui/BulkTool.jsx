@@ -1,7 +1,9 @@
 // The page template for every "pick settings → add files → process → download" tool.
 // A tool page only describes its settings and how to process one file; this module does the rest:
 // numbered steps, file list, progress and downloads, inside the shared ToolFrame.
+import { useEffect, useRef, useState } from 'react';
 import { saveAs } from 'file-saver';
+import { readAudioInfo } from '../lib/audioInfo';
 import { Download, Lock, RotateCcw, ArrowRight, LoaderCircle } from 'lucide-react';
 import useBulkProcessor from '../hooks/useBulkProcessor';
 import { downloadFiles } from '../lib/download';
@@ -38,8 +40,38 @@ export default function BulkTool({
   processFile,
   verb = { action: 'Convert', working: 'Converting' },
   faqs = [],
+  // Optional check run on each file's details before processing, using the current settings:
+  // (info, file) => ({ tone: 'warn' | 'info', text }) | null. info comes from src/lib/audioInfo.js.
+  inspect,
 }) {
   const { queue, isProcessing, addFiles, removeFile, clearQueue, processQueue } = useBulkProcessor();
+
+  // Read every added file's details once (length, format, quality, channels).
+  const [infos, setInfos] = useState({});
+  const infoByFile = useRef(new Map());
+  const started = useRef(new Set());
+  useEffect(() => {
+    queue.filter((item) => item.file && !started.current.has(item.id)).forEach(async (item) => {
+      started.current.add(item.id);
+      const info = await readAudioInfo(item.file);
+      infoByFile.current.set(item.file, info);
+      setInfos((prev) => ({ ...prev, [item.id]: info }));
+    });
+  }, [queue]);
+
+  const notes = {};
+  if (inspect) {
+    queue.forEach((item) => {
+      const info = infos[item.id];
+      if (info) notes[item.id] = inspect(info, item.file) || null;
+    });
+  }
+
+  // processFile gets the file's details as a third argument (may be { ok: false } for unusual files).
+  const run = (forceAll) => processQueue(
+    (file, onProgress) => processFile(file, onProgress, infoByFile.current.get(file) || { ok: false }),
+    forceAll,
+  );
 
   const waiting = queue.filter((i) => i.status === 'pending').length;
   const done = queue.filter((i) => i.status === 'done').length;
@@ -65,7 +97,7 @@ export default function BulkTool({
               <DropZone onFiles={addFiles} accept={accept} hint={dropHint} />
             ) : (
               <div className="space-y-3">
-                <FileList queue={queue} workingWord={verb.working} onRemove={removeFile} busy={isProcessing} />
+                <FileList queue={queue} infos={infos} notes={notes} workingWord={verb.working} onRemove={removeFile} busy={isProcessing} />
                 <DropZone onFiles={addFiles} accept={accept} compact disabled={isProcessing} />
               </div>
             )}
@@ -93,7 +125,7 @@ export default function BulkTool({
                   {verb.working} your files…
                 </Button>
               ) : waiting > 0 ? (
-                <Button onClick={() => processQueue(processFile)}>
+                <Button onClick={() => run(false)}>
                   {verb.action} {plural(waiting, 'file')} <ArrowRight size={17} aria-hidden="true" />
                 </Button>
               ) : (
@@ -105,7 +137,7 @@ export default function BulkTool({
                 )
               )}
               {finished && done > 0 && (
-                <Button variant="secondary" onClick={() => processQueue(processFile, true)}>
+                <Button variant="secondary" onClick={() => run(true)}>
                   <RotateCcw size={16} aria-hidden="true" /> {verb.action} again with new settings
                 </Button>
               )}

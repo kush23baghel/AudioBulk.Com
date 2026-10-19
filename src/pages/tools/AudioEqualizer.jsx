@@ -3,6 +3,8 @@ import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
+import { denoiseToWav } from '../../lib/denoise';
+import { formatDuration } from '../../lib/audioInfo';
 
 const PRESETS = [
   { value: 'more-bass', label: 'More bass', hint: 'Fuller, deeper sound. Good for music on small speakers.', suffix: 'more_bass', filter: 'bass=g=8:f=100:w=0.5' },
@@ -11,6 +13,7 @@ const PRESETS = [
   { value: 'brighter', label: 'Brighter', hint: 'Adds sparkle and detail to dull-sounding audio.', suffix: 'brighter', filter: 'treble=g=6:f=5000:w=0.5' },
   { value: 'radio', label: 'Radio sound', hint: 'Thin and punchy, like an old radio or a phone call.', suffix: 'radio', filter: 'highpass=f=300,lowpass=f=3400,equalizer=f=1500:width_type=o:width=2:g=4' },
   { value: 'no-hum', label: 'Remove low hum', hint: 'Cuts the low buzz from fans, air conditioners and power lines.', suffix: 'no_hum', filter: 'highpass=f=100,equalizer=f=50:width_type=q:width=8:g=-20,equalizer=f=60:width_type=q:width=8:g=-20' },
+  { value: 'denoise', label: 'Remove background noise', hint: 'For voice recordings with hiss, fans or traffic', suffix: 'no_noise', denoise: true },
 ];
 
 const OUTPUTS = [
@@ -33,6 +36,14 @@ export default function AudioEqualizer() {
   const [output, setOutput] = useState('same');
   const preset = PRESETS.find((p) => p.value === presetValue);
 
+  const inspect = (info) => {
+    if (preset.denoise && info && info.ok && info.channels >= 2 && info.duration > 480) {
+      return { tone: 'warn', text: `This looks like music (stereo, ${formatDuration(info.duration)}). Remove background noise is made for speech and can make music sound thin. Pick another sound for music.` };
+    }
+    if (preset.denoise) return { tone: 'info', text: 'Speech clean-up runs on your device and can take a little while. The result is mono.' };
+    return null;
+  };
+
   const processFile = async (file, onProgress) => {
     const ffmpeg = await getFFmpeg();
     const id = Math.random().toString(36).slice(2, 9);
@@ -43,6 +54,19 @@ export default function AudioEqualizer() {
     let progressHandler = null;
 
     try {
+      if (preset.denoise) {
+        const wav = await denoiseToWav(file, (p) => onProgress(p * 0.9));
+        const base = file.name.replace(/\.[^.]+$/, '') || file.name;
+        if (target.ext === 'wav') return { blob: wav, name: `${base}_${preset.suffix}.wav` };
+        const wavName = `clean_${id}.wav`;
+        await ffmpeg.writeFile(wavName, new Uint8Array(await wav.arrayBuffer()));
+        try {
+          const c = await ffmpeg.exec(['-i', wavName, ...target.codec, outputName]);
+          if (c !== 0) throw new Error('This file could not be changed. It may be damaged. Try a different file.');
+          const d = await ffmpeg.readFile(outputName);
+          return { blob: new Blob([d.buffer], { type: target.mime }), name: `${base}_${preset.suffix}.${target.ext}` };
+        } finally { await safeDelete(ffmpeg, wavName); }
+      }
       await ffmpeg.writeFile(inputName, await fetchFile(file));
 
       let hasAudio = false;
@@ -79,6 +103,7 @@ export default function AudioEqualizer() {
       accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '.wma', '.opus'], 'video/*': ['.mp4', '.mov', '.webm', '.mkv'] }}
       dropHint="Audio files like MP3, WAV, M4A and FLAC. Videos work too: you get just the sound."
       processFile={processFile}
+      inspect={inspect}
       steps={[
         {
           label: 'Pick a sound',
@@ -93,7 +118,7 @@ export default function AudioEqualizer() {
         { q: 'Are my files uploaded anywhere?', a: 'No. Your files are changed inside your web browser, on your own computer. They never leave your device, and we never see them.' },
         { q: 'What does an equalizer do?', a: 'It makes some parts of the sound louder or quieter. Low sounds are the bass, like drums. High sounds are the treble, like cymbals and the "s" in speech.' },
         { q: 'Can I hear it before I download?', a: 'Not yet. Try one sound on one file first, play the result, and come back if you want a different one.' },
-        { q: 'Will "Clear voice" remove background noise?', a: 'Not completely. It lifts the parts of the sound that make speech easy to understand and cuts low rumble, but it cannot remove noise like traffic or chatter.' },
+        { q: 'Will "Clear voice" remove background noise?', a: 'Not really. Use the "Remove background noise" sound for that: a small AI model on your device takes hiss, fans and traffic out of voice recordings. "Clear voice" only lifts speech and cuts low rumble.' },
         { q: 'Which file type should I pick?', a: '"Same as my file" is best for most people. If your file is a type we cannot save in, such as WMA or a video, you get an MP3 instead.' },
       ]}
     />

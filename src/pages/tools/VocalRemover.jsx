@@ -3,6 +3,7 @@ import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
+import { formatDuration } from '../../lib/audioInfo';
 
 // Both filters give a two-speaker (stereo) result so it plays normally everywhere.
 const MODES = [
@@ -26,7 +27,7 @@ export default function VocalRemover() {
   const [mode, setMode] = useState('remove');
   const chosen = MODES.find((m) => m.value === mode);
 
-  const processFile = async (file, onProgress) => {
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
     const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
@@ -39,7 +40,7 @@ export default function VocalRemover() {
 
       // FFmpeg's log says "mono" or "stereo" for each audio stream.
       let hasAudio = false;
-      let isMono = false;
+      let isMono = info?.channels === 1;
       const probe = ({ message }) => {
         if (message.includes('Audio:')) {
           hasAudio = true;
@@ -60,7 +61,7 @@ export default function VocalRemover() {
         '-vn',
         '-af', chosen.filter,
         '-c:a', 'libmp3lame',
-        '-b:a', '192k',
+        '-b:a', `${info?.kbps ? Math.min(320, Math.max(128, info.kbps)) : 192}k`,
         outputName,
       ]);
 
@@ -74,6 +75,14 @@ export default function VocalRemover() {
     }
   };
 
+  const inspect = (info) => {
+    if (!info || !info.ok) return null;
+    if (info.hasAudio === false) return { tone: 'warn', text: 'This file has no sound in it.' };
+    if (info.channels === 1) return { tone: 'warn', text: "This file is mono, so the voice can't be separated. Try a stereo version of the song." };
+    if (info.duration && info.duration < 5) return { tone: 'warn', text: `This file is very short (${formatDuration(info.duration)}), so there is little to hear.` };
+    return { tone: 'info', text: 'Results vary by song. A voice placed in the middle of the mix comes out best.' };
+  };
+
   return (
     <BulkTool
       path="/tools/vocal-remover"
@@ -83,6 +92,7 @@ export default function VocalRemover() {
       accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'] }}
       dropHint="Stereo songs like MP3, WAV, M4A and FLAC."
       processFile={processFile}
+      inspect={inspect}
       steps={[
         {
           label: 'What do you want to keep?',

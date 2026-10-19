@@ -17,12 +17,32 @@ const LEVELS = [
   { label: 'Best sound', detail: 'about 192 kbps, hard to tell from the original', kbps: '192k' },
 ];
 
+const formatSize = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
 export default function BulkAudioCompressor() {
   const [format, setFormat] = useState('mp3');
   const [level, setLevel] = useState(2);
   const fmt = FORMATS.find((f) => f.value === format);
+  const chosenKbps = parseInt(LEVELS[level].kbps, 10);
 
-  const processFile = async (file, onProgress) => {
+  // A file already at or below the chosen level would only grow, so keep its own quality.
+  const alreadySmall = (info) => Boolean(info?.ok && !info.lossless && info.kbps && info.kbps <= chosenKbps);
+
+  const inspect = (info, file) => {
+    if (!info?.ok) return null;
+    if (alreadySmall(info)) {
+      return { tone: 'warn', text: `Already small. This file is ${info.kbps} kbps, so this would not make it smaller. It will keep its own quality.` };
+    }
+    if (!info.duration) return null;
+    const est = (chosenKbps * 1000 * info.duration) / 8;
+    const voiceTip = info.channels === 1 && chosenKbps > 64 ? ' This looks like a voice recording, so "Smallest file" is enough.' : '';
+    if (est >= file.size) {
+      return { tone: 'warn', text: `Already small. About ${formatSize(file.size)} now, and this would not make it smaller.` };
+    }
+    return { tone: 'info', text: `About ${formatSize(file.size)} now, around ${formatSize(est)} after.${voiceTip}` };
+  };
+
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
     const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
@@ -37,7 +57,10 @@ export default function BulkAudioCompressor() {
       ffmpeg.on('progress', progressHandler);
 
       // -vn drops cover art and video so only the sound is kept.
-      await ffmpeg.exec(['-i', inputName, '-vn', ...fmt.codec, '-b:a', LEVELS[level].kbps, outputName]);
+      // Keep the source quality when it is already at or below the chosen level, and keep mono as mono.
+      const kbps = alreadySmall(info) ? Math.max(32, info.kbps) : chosenKbps;
+      const monoArgs = info?.ok && info.channels === 1 ? ['-ac', '1'] : [];
+      await ffmpeg.exec(['-i', inputName, '-vn', ...monoArgs, ...fmt.codec, '-b:a', `${kbps}k`, outputName]);
 
       const data = await ffmpeg.readFile(outputName);
       if (!data || data.length === 0) {
@@ -61,6 +84,7 @@ export default function BulkAudioCompressor() {
       accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'] }}
       dropHint="Audio files like WAV, MP3, M4A and FLAC."
       processFile={processFile}
+      inspect={inspect}
       verb={{ action: 'Make smaller', working: 'Making smaller' }}
       steps={[
         {

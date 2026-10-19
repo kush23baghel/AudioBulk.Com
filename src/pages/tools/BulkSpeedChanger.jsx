@@ -3,6 +3,7 @@ import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
+import { formatDuration } from '../../lib/audioInfo';
 
 const SPEEDS = [
   { value: '0.25', label: '0.25×', hint: 'Four times slower. Good for picking out fast words.' },
@@ -27,11 +28,12 @@ const getAtempoFilter = (speed) => {
 
 const MIME = { mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac', ogg: 'audio/ogg', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska' };
 const VIDEO_EXT = ['mp4', 'mov', 'webm', 'mkv', 'avi'];
+const LOSSY_AUDIO_EXT = ['mp3', 'm4a', 'aac', 'ogg'];
 
 export default function BulkSpeedChanger() {
   const [speed, setSpeed] = useState('1.5');
 
-  const processFile = async (file, onProgress) => {
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
     const factor = Number(speed);
     const id = Math.random().toString(36).slice(2, 9);
@@ -59,7 +61,12 @@ export default function BulkSpeedChanger() {
         // Video needs its picture sped up by the same amount, so sound and picture stay together.
         args.push('-filter:v', `setpts=${1 / factor}*PTS`, '-preset', 'veryfast');
       }
-      args.push('-filter:a', getAtempoFilter(factor), outputName);
+      args.push('-filter:a', getAtempoFilter(factor));
+      // Keep the source quality: reuse the file's own bitrate instead of a fixed one.
+      if (!isVideo && LOSSY_AUDIO_EXT.includes(inputExt) && info?.kbps) {
+        args.push('-b:a', `${Math.min(320, Math.max(32, info.kbps))}k`);
+      }
+      args.push(outputName);
       const code = await ffmpeg.exec(args);
       if (code !== 0) throw new Error('This file could not be changed. It may be damaged. Try a different file.');
 
@@ -74,6 +81,16 @@ export default function BulkSpeedChanger() {
     }
   };
 
+  const inspect = (info) => {
+    if (!info || !info.ok) return null;
+    if (info.hasAudio === false) return { tone: 'warn', text: 'This file has no sound in it, so there is nothing to speed up.' };
+    const factor = Number(speed);
+    const length = info.duration ? `Length: ${formatDuration(info.duration)} → ${formatDuration(info.duration / factor)} at ${speed}×.` : '';
+    if (factor > 2) return { tone: 'warn', text: `${length} Above 2× speech gets hard to follow.`.trim() };
+    if (factor < 0.5) return { tone: 'warn', text: `${length} Very slow speeds can sound rough or echoey.`.trim() };
+    return length ? { tone: 'info', text: length } : null;
+  };
+
   return (
     <BulkTool
       path="/tools/bulk-audio-speed"
@@ -83,6 +100,7 @@ export default function BulkSpeedChanger() {
       accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'], 'video/*': ['.mp4', '.mov', '.webm', '.mkv'] }}
       dropHint="Audio files like MP3, WAV and M4A. Videos work too, and the picture speeds up with the sound."
       processFile={processFile}
+      inspect={inspect}
       steps={[
         {
           label: 'Pick a speed',

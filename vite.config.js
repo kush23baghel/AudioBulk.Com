@@ -76,7 +76,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png'],
       // Cache the self-hosted fonts too, so every visit after the first paints instantly.
-      workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'] },
+      // The AI voice library is only downloaded when someone uses AI voices, so it is not pre-cached.
+      workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'], globIgnores: ['**/kokoro-*.js'] },
       manifest: {
         name: 'AudioBulk Tools',
         short_name: 'AudioBulk',
@@ -121,6 +122,11 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
+            // Heavy libraries used by one tool only (AI voices, noise removal, waveform, file reading)
+            // keep their own lazy chunks, so visitors who never use them never download them.
+            if (/kokoro-js|@huggingface[\\/]transformers|onnxruntime|phonemizer|@jitsi[\\/]rnnoise|wavesurfer|music-metadata|strtok3|token-types|file-type/.test(id)) {
+              return undefined;
+            }
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
               return 'vendor-react';
             }

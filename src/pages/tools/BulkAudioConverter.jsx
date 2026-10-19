@@ -20,12 +20,45 @@ const QUALITY = [
   { label: 'Best sound', detail: 'the highest quality this format allows (up to 320 kbps)', kbps: '320k' },
 ];
 
+const STANDARD_KBPS = [64, 96, 128, 160, 192, 256, 320];
+
+// A lossy file cannot gain quality. If the chosen kbps is above the source, use the
+// closest standard value at or just under the source instead.
+function effectiveKbps(info, chosen) {
+  if (!info?.ok || info.lossless || !info.kbps || chosen <= info.kbps * 1.05) return chosen;
+  const fit = [...STANDARD_KBPS].reverse().find((k) => k <= info.kbps * 1.05);
+  return fit ?? Math.max(32, info.kbps);
+}
+
+const extOf = (name) => (name.includes('.') ? name.split('.').pop().toLowerCase() : '');
+
 export default function BulkAudioConverter() {
   const [format, setFormat] = useState('mp3');
   const [quality, setQuality] = useState(1);
   const fmt = FORMATS.find((f) => f.value === format);
+  const chosenKbps = parseInt(QUALITY[quality].kbps, 10);
 
-  const processFile = async (file, onProgress) => {
+  const inspect = (info, file) => {
+    if (!info?.ok) return null;
+    const ext = extOf(file.name);
+    const sameFormat = ext === fmt.value || (fmt.value === 'm4a' && ext === 'mp4');
+    if (info.lossless && !fmt.lossless) {
+      return { tone: 'info', text: `This file is perfect quality. ${fmt.label} is smaller but loses a little detail.` };
+    }
+    if (!info.lossless && fmt.lossless) {
+      return { tone: 'warn', text: `${fmt.label} will not improve this file. It just gets bigger, because the lost detail does not come back.` };
+    }
+    if (!fmt.lossless && info.kbps && chosenKbps > info.kbps * 1.05) {
+      const use = effectiveKbps(info, chosenKbps);
+      return { tone: 'warn', text: `Your file is ${info.kbps} kbps. Choosing ${chosenKbps} kbps would make it bigger, not better, so it will be saved at ${use} kbps instead.` };
+    }
+    if (sameFormat) {
+      return { tone: 'info', text: `This is already ${fmt.label}. Converting again changes the size a little and can lower quality slightly.` };
+    }
+    return null;
+  };
+
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
     const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
@@ -47,7 +80,7 @@ export default function BulkAudioConverter() {
       progressHandler = ({ progress }) => onProgress(progress * 100);
       ffmpeg.on('progress', progressHandler);
 
-      const qualityArgs = fmt.lossless ? [] : ['-b:a', QUALITY[quality].kbps];
+      const qualityArgs = fmt.lossless ? [] : ['-b:a', `${effectiveKbps(info, chosenKbps)}k`];
       // -vn drops cover art and video so a video file becomes audio only.
       await ffmpeg.exec(['-i', inputName, '-vn', ...fmt.codec, ...qualityArgs, outputName]);
 
@@ -70,6 +103,7 @@ export default function BulkAudioConverter() {
       accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '.wma', '.opus'], 'video/*': ['.mp4', '.mov', '.webm', '.mkv'] }}
       dropHint="Audio files like MP3, WAV, M4A and FLAC. Videos work too: you get just the sound."
       processFile={processFile}
+      inspect={inspect}
       steps={[
         {
           label: 'Pick a format',

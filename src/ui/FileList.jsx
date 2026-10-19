@@ -1,5 +1,10 @@
+import { useState } from 'react';
 import { saveAs } from 'file-saver';
-import { Music, Film, Image, FileText, Download, X, LoaderCircle, CircleCheck, CircleAlert } from 'lucide-react';
+import { Music, Film, Image, FileText, Download, X, LoaderCircle, CircleCheck, CircleAlert, Headphones, Info, TriangleAlert } from 'lucide-react';
+import { describeAudio } from '../lib/audioInfo';
+import AudioPreview from './AudioPreview';
+
+const AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg|opus|flac|webm)$/i;
 
 function FileIcon({ file }) {
   const type = file?.type || '';
@@ -45,7 +50,22 @@ export function StatusPill({ item, workingWord }) {
   return <span className="text-sm text-muted">Waiting</span>;
 }
 
-function FileRow({ item, workingWord, onRemove, busy }) {
+// A plain note about this file, shown before processing (from the tool's own checks).
+function FileNote({ note }) {
+  if (!note) return null;
+  const warn = note.tone === 'warn';
+  const Icon = warn ? TriangleAlert : Info;
+  return (
+    <p className={`mt-1.5 flex items-start gap-1.5 text-sm ${warn ? 'text-bad' : 'text-muted'}`}>
+      <Icon size={14} className="mt-0.5 shrink-0" aria-hidden="true" /> {note.text}
+    </p>
+  );
+}
+
+function FileRow({ item, info, note, workingWord, onRemove, busy }) {
+  const [listening, setListening] = useState(false);
+  const audioOut = item.outputs?.find((o) => AUDIO_EXT.test(o.name));
+  const facts = [formatSize(item.size), describeAudio(info)].filter(Boolean).join(' · ');
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sand text-wine">
@@ -53,7 +73,8 @@ function FileRow({ item, workingWord, onRemove, busy }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium" title={item.name}>{item.name}</p>
-        <p className="text-xs text-muted">{formatSize(item.size)}</p>
+        <p className="text-xs text-muted">{facts}</p>
+        {item.status !== 'error' && item.status !== 'done' && <FileNote note={note} />}
         {item.status === 'error' && item.errorMsg && <p className="mt-1 text-sm text-bad">{item.errorMsg}</p>}
         {item.status === 'processing' && (
           <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-line">
@@ -63,6 +84,18 @@ function FileRow({ item, workingWord, onRemove, busy }) {
       </div>
       <div className="flex items-center gap-2">
         <StatusPill item={item} workingWord={workingWord} />
+        {audioOut && (
+          <button
+            type="button"
+            onClick={() => setListening((l) => !l)}
+            aria-expanded={listening}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-semibold transition-colors ${
+              listening ? 'border-wine bg-wine text-paper' : 'border-line-strong text-wine hover:bg-sand'
+            }`}
+          >
+            <Headphones size={14} aria-hidden="true" /> Listen
+          </button>
+        )}
         {item.outputs?.map((out) => (
           <button
             key={out.url}
@@ -85,15 +118,20 @@ function FileRow({ item, workingWord, onRemove, busy }) {
           <X size={16} aria-hidden="true" />
         </button>
       </div>
+      {listening && audioOut && (
+        <div className="basis-full">
+          <AudioPreview url={audioOut.url} label={audioOut.name} />
+        </div>
+      )}
     </li>
   );
 }
 
-export default function FileList({ queue, workingWord, onRemove, busy }) {
+export default function FileList({ queue, infos = {}, notes = {}, workingWord, onRemove, busy }) {
   return (
     <ul className="divide-y divide-line">
       {queue.map((item) => (
-        <FileRow key={item.id} item={item} workingWord={workingWord} onRemove={onRemove} busy={busy} />
+        <FileRow key={item.id} item={item} info={infos[item.id]} note={notes[item.id]} workingWord={workingWord} onRemove={onRemove} busy={busy} />
       ))}
     </ul>
   );

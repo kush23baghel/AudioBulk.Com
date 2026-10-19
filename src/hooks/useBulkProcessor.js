@@ -142,6 +142,11 @@ export default function useBulkProcessor() {
           break;
         }
 
+        // Never hand people an empty file and call it done.
+        if (!result?.blob?.size) {
+          throw new Error('Something went wrong and the result came out empty. Please try again, or try a different file.');
+        }
+
         // Process primary blob and any extra blobs
         const outputsToAdd = [];
         const processBlobResult = (res) => {

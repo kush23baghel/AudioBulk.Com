@@ -20,12 +20,40 @@ const QUALITY = [
   { label: 'Best sound', detail: 'the highest quality this format allows (up to 320 kbps)', kbps: '320k' },
 ];
 
+// Standard sound quality steps (kbps) used when matching the video's own sound.
+const STANDARD_KBPS = [64, 96, 128, 160, 192, 256, 320];
+const nearestStandard = (kbps) => STANDARD_KBPS.reduce((a, b) => (Math.abs(b - kbps) < Math.abs(a - kbps) ? b : a));
+
 export default function BulkVideoToAudioConverter() {
   const [format, setFormat] = useState('mp3');
   const [quality, setQuality] = useState(2);
   const fmt = FORMATS.find((f) => f.value === format);
+  const chosenKbps = parseInt(QUALITY[quality].kbps, 10);
 
-  const processFile = async (file, onProgress) => {
+  const silent = (info) => info?.ok && (info.hasAudio === false || !info.channels);
+
+  // Never encode above the video's own sound quality: it cannot add detail, only size.
+  const targetKbps = (info) => (
+    info?.ok && info.kbps && !info.lossless && chosenKbps > info.kbps * 1.05
+      ? Math.max(32, nearestStandard(info.kbps))
+      : chosenKbps
+  );
+
+  const inspect = (info) => {
+    if (!info?.ok) return null;
+    if (silent(info)) return { tone: 'warn', text: 'This video seems to have no sound, so there is nothing to take out.' };
+    if (fmt.lossless) {
+      return info.lossless ? null : { tone: 'warn', text: `${fmt.label} will not improve the sound. It just makes the file bigger.` };
+    }
+    if (!info.kbps || info.lossless) return null;
+    const same = nearestStandard(info.kbps);
+    if (targetKbps(info) !== chosenKbps) {
+      return { tone: 'warn', text: `The video's sound is about ${info.kbps} kbps. Choosing ${chosenKbps} kbps only makes the file bigger, so it will be saved at ${targetKbps(info)} kbps, the same quality as the video.` };
+    }
+    return { tone: 'info', text: `The video's sound is about ${info.kbps} kbps. For the same quality as the video, pick about ${same} kbps.` };
+  };
+
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
     const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
@@ -47,7 +75,7 @@ export default function BulkVideoToAudioConverter() {
       progressHandler = ({ progress }) => onProgress(progress * 100);
       ffmpeg.on('progress', progressHandler);
 
-      const qualityArgs = fmt.lossless ? [] : ['-b:a', QUALITY[quality].kbps];
+      const qualityArgs = fmt.lossless ? [] : ['-b:a', `${targetKbps(info)}k`];
       // -vn drops the picture so only the sound is kept.
       await ffmpeg.exec(['-i', inputName, '-vn', ...fmt.codec, ...qualityArgs, outputName]);
 
@@ -70,6 +98,7 @@ export default function BulkVideoToAudioConverter() {
       accept={{ 'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mkv', '.m4v', '.flv', '.wmv', '.3gp'] }}
       dropHint="Video files like MP4, MOV, WebM, AVI and MKV."
       processFile={processFile}
+      inspect={inspect}
       steps={[
         {
           label: 'Pick an audio format',

@@ -3,6 +3,7 @@ import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
+import { formatDuration } from '../../lib/audioInfo';
 
 const STEP_OPTIONS = Array.from({ length: 25 }, (_, i) => {
   const value = i - 12;
@@ -26,7 +27,7 @@ function tempoChain(factor) {
 export default function PitchShifter() {
   const [steps, setSteps] = useState(3);
 
-  const processFile = async (file, onProgress) => {
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
     const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
@@ -39,12 +40,13 @@ export default function PitchShifter() {
 
       // Read the file's own sample rate and check there is sound in it.
       let hasAudio = false;
-      let origRate = 44100;
+      const knownRate = info?.sampleRate > 0 ? info.sampleRate : 0;
+      let origRate = knownRate || 44100;
       const probe = ({ message }) => {
         if (message.includes('Audio:')) {
           hasAudio = true;
           const match = message.match(/(\d{4,6}) Hz/);
-          if (match) origRate = Number(match[1]);
+          if (match && !knownRate) origRate = Number(match[1]);
         }
       };
       ffmpeg.on('log', probe);
@@ -56,13 +58,15 @@ export default function PitchShifter() {
       ffmpeg.on('progress', progressHandler);
 
       // asetrate changes pitch but also speed. atempo = 1/ratio puts the speed back, so the length stays the same.
+      // Keep the source quality where known (between 128k and 320k).
+      const bitrate = info?.kbps ? Math.min(320, Math.max(128, info.kbps)) : 192;
       const ratio = Math.pow(2, steps / 12);
       const newRate = Math.round(origRate * ratio);
       const filter = steps === 0
         ? 'anull'
         : `asetrate=${newRate},aresample=${origRate},${tempoChain(1 / ratio)}`;
 
-      await ffmpeg.exec(['-i', inputName, '-vn', '-af', filter, '-c:a', 'libmp3lame', '-b:a', '192k', outputName]);
+      await ffmpeg.exec(['-i', inputName, '-vn', '-af', filter, '-c:a', 'libmp3lame', '-b:a', `${bitrate}k`, outputName]);
 
       const data = await ffmpeg.readFile(outputName);
       const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
@@ -75,6 +79,17 @@ export default function PitchShifter() {
     }
   };
 
+  const inspect = (info) => {
+    if (!info || !info.ok) return null;
+    if (info.hasAudio === false) return { tone: 'warn', text: 'This file has no sound in it, so there is no pitch to change.' };
+    if (steps === 0) return { tone: 'info', text: 'Zero steps means no change. The sound stays the same.' };
+    const n = Math.abs(steps);
+    const len = info.duration ? `same length (${formatDuration(info.duration)})` : 'same length';
+    const text = `Sounds ${n} ${n === 1 ? 'step' : 'steps'} ${steps > 0 ? 'higher' : 'lower'}, ${len}.`;
+    if (n > 7) return { tone: 'warn', text: `${text} Big shifts like this sound robotic, especially on voices.` };
+    return { tone: 'info', text };
+  };
+
   return (
     <BulkTool
       path="/tools/pitch-shifter"
@@ -84,6 +99,7 @@ export default function PitchShifter() {
       accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'], 'video/*': ['.mp4', '.mov', '.webm', '.mkv'] }}
       dropHint="Audio files like MP3, WAV, M4A and FLAC. Videos work too: you get just the sound."
       processFile={processFile}
+      inspect={inspect}
       verb={{ action: 'Change pitch', working: 'Changing pitch' }}
       steps={[
         {
