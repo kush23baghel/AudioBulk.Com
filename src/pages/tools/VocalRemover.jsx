@@ -1,50 +1,72 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips } from '../../ui/controls';
+
+// Both filters give a two-speaker (stereo) result so it plays normally everywhere.
+const MODES = [
+  {
+    value: 'remove',
+    label: 'Remove the voice',
+    hint: 'Keeps the music and lowers the singing. Good for karaoke.',
+    suffix: 'no_voice',
+    filter: 'pan=stereo|c0=0.5*c0-0.5*c1|c1=0.5*c0-0.5*c1',
+  },
+  {
+    value: 'keep',
+    label: 'Keep the voice',
+    hint: 'Keeps what sits in the middle of the song, mostly the voice, and lowers the rest.',
+    suffix: 'voice_only',
+    filter: 'pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1',
+  },
+];
 
 export default function VocalRemover() {
-  const [mode, setMode] = useState('instrumental'); // instrumental or vocals
-  const processor = useBulkProcessor();
+  const [mode, setMode] = useState('remove');
+  const chosen = MODES.find((m) => m.value === mode);
 
   const processFile = async (file, onProgress) => {
     const ffmpeg = await getFFmpeg();
-    const ext = file.name.split('.').pop();
-    const uid = Math.random().toString(36).substring(7);
-    const inputName = `input_${uid}.${ext}`;
-    const outputName = `output_${uid}.mp3`;
-
+    const id = Math.random().toString(36).slice(2, 9);
+    const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
+    const inputName = `input_${id}.${inputExt}`;
+    const outputName = `output_${id}.mp3`;
     let progressHandler = null;
+
     try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+      // FFmpeg's log says "mono" or "stereo" for each audio stream.
+      let hasAudio = false;
+      let isMono = false;
+      const probe = ({ message }) => {
+        if (message.includes('Audio:')) {
+          hasAudio = true;
+          if (/\bmono\b/i.test(message)) isMono = true;
+        }
+      };
+      ffmpeg.on('log', probe);
+      try { await ffmpeg.exec(['-i', inputName]); } catch { /* expected: no output file given */ }
+      ffmpeg.off('log', probe);
+      if (!hasAudio) throw new Error('This file has no sound in it. Try a different audio file.');
+      if (isMono) throw new Error('This file is mono (one channel), so the voice cannot be separated from the music. Try a stereo version of the song.');
+
       progressHandler = ({ progress }) => onProgress(progress * 100);
-    ffmpeg.on('progress', progressHandler);
+      ffmpeg.on('progress', progressHandler);
 
-    // Center channel extraction using pan filter.
-    // Vocals are typically center-panned. Side channel (L-R) = instrumental.
-    // Center channel (L+R-side) = vocals estimate.
-    let filter;
-    if (mode === 'instrumental') {
-      // Side channel (L-R): removes center-panned vocals
-      filter = 'pan=stereo|c0=c0-c1|c1=c1-c0';
-    } else {
-      // Center channel (L+R mix): isolates vocals
-      filter = 'pan=mono|c0=0.5*c0+0.5*c1';
-    }
+      await ffmpeg.exec([
+        '-i', inputName,
+        '-vn',
+        '-af', chosen.filter,
+        '-c:a', 'libmp3lame',
+        '-b:a', '192k',
+        outputName,
+      ]);
 
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-af', filter,
-      '-c:a', 'libmp3lame',
-      '-b:a', '192k',
-      outputName
-    ]);
-
-    const data = await ffmpeg.readFile(outputName);
-    const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-    const baseName = file.name.replace(/\.[^.]+$/, '');
-    return { blob, name: `${baseName}_${mode}.mp3` };
+      const data = await ffmpeg.readFile(outputName);
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      return { blob: new Blob([data.buffer], { type: 'audio/mpeg' }), name: `${baseName}_${chosen.suffix}.mp3` };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
@@ -52,51 +74,27 @@ export default function VocalRemover() {
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Output Mode</label>
-        {[
-          { value: 'instrumental', label: 'Instrumental Track', desc: 'Removes center-panned vocals using L-R channel subtraction' },
-          { value: 'vocals', label: 'Vocal Track', desc: 'Extracts center-panned vocal content from stereo mix' },
-        ].map(m => (
-          <button
-            key={m.value}
-            onClick={() => setMode(m.value)}
-            className={`w-full text-left btn btn-xs px-3 py-3 h-auto rounded-xl border flex flex-col gap-0.5 ${
-              mode === m.value
-                ? 'bg-sky-500 text-white border-sky-500'
-                : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <span className="font-semibold text-xs">{m.label}</span>
-            <span className="text-[10px] opacity-70">{m.desc}</span>
-          </button>
-        ))}
-      </div>
-      <div className="rounded-xl bg-amber-500/5 border border-amber-500/10 p-3">
-        <p className="text-[10px] text-amber-400 leading-normal">
-          ⚠️ Works best on stereo tracks with center-panned vocals. Results vary by mix. Professional AI separation requires a server-side ML model.
-        </p>
-      </div>
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="Vocal Remover / Splitter"
-      description="Extract instrumental or vocal tracks from stereo audio files using center-channel extraction technique. Browser-local, no upload needed."
-      icon="fa-microphone-slash"
-      categoryName="Audio Tools"
-      categoryPath="/all-tools?cat=audio"
-      acceptTypes={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'] }}
-      optionsTitle="Separation Mode"
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/vocal-remover"
+      name="Vocal Remover"
+      title="Take the voice out of a song, or keep mostly the voice"
+      intro="Works best on stereo songs where the singer is in the middle of the mix. It is a simple trick, not artificial intelligence, so some voice or music may be left over."
+      accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'] }}
+      dropHint="Stereo songs like MP3, WAV, M4A and FLAC."
+      processFile={processFile}
+      steps={[
+        {
+          label: 'What do you want to keep?',
+          content: <ChoiceChips label="Choose one" options={MODES} value={mode} onChange={setMode} />,
+        },
+      ]}
       faqs={[
-        { q: 'How does this work without AI?', a: 'Vocals are typically mixed in the center of a stereo track. By subtracting the left and right channels, we remove the center-panned content. This is called "center channel removal".' },
-        { q: 'What if the result has artefacts?', a: 'The technique works best on professionally mixed tracks. Mono-mixed or non-standard recordings may not produce clean results.' }
+        { q: 'How does it work?', a: 'In most songs the singer is placed in the middle, so the same voice is in the left and right speaker. Taking the two sides away from each other removes the middle. Adding them together keeps it.' },
+        { q: 'Will the voice be gone completely?', a: 'Not always. Echo, backup singers and instruments that are also in the middle can stay or disappear with the voice. Expect a quieter voice, not a perfect clean track.' },
+        { q: 'Why does my file give an error?', a: 'Mono files have only one channel, so there is nothing to compare and the voice cannot be separated. Use a stereo version of the song.' },
+        { q: 'Why does "Keep the voice" still have music in it?', a: 'Drums, bass and other instruments are often in the middle too, so they stay as well. This tool cannot split them from the voice.' },
+        { q: 'Are my files uploaded anywhere?', a: 'No. Your files are processed inside your web browser, on your own computer. They never leave your device.' },
       ]}
     />
   );

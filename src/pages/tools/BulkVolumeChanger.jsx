@@ -1,55 +1,54 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import BulkTool from '../../ui/BulkTool';
+import { QualitySlider } from '../../ui/controls';
+
+const LEVELS = [
+  { label: 'Much quieter', detail: '25% of the original volume', factor: 0.25 },
+  { label: 'Quieter', detail: '50% of the original volume, about half as loud', factor: 0.5 },
+  { label: 'A little quieter', detail: '75% of the original volume', factor: 0.75 },
+  { label: 'A little louder', detail: '125% of the original volume', factor: 1.25 },
+  { label: 'Louder', detail: '150% of the original volume', factor: 1.5 },
+  { label: 'Twice as loud', detail: '200% of the original volume. Already loud files may start to crackle', factor: 2 },
+  { label: 'Much louder', detail: '300% of the original volume. Very loud settings can make the sound crackle or distort', factor: 3 },
+];
 
 export default function BulkVolumeChanger() {
-  const [volume, setVolume] = useState(150); // percentage: 0 to 300
-  const processor = useBulkProcessor();
+  const [level, setLevel] = useState(3);
+  const chosen = LEVELS[level];
 
   const processFile = async (file, onProgress) => {
     const ffmpeg = await getFFmpeg();
-    const isVideo = file.type.startsWith('video') || ['.mp4', '.mkv', '.webm', '.mov', '.avi'].some(ext => file.name.endsWith(ext));
-
-    const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'mp4';
-    const inputName = `input_${Math.random().toString(36).substring(7)}.${inputExt}`;
-    const outputName = `output_${Math.random().toString(36).substring(7)}.${inputExt}`;
-
+    const id = Math.random().toString(36).slice(2, 9);
+    const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
+    const inputName = `input_${id}.${inputExt}`;
+    const outputName = `output_${id}.${inputExt}`;
     let progressHandler = null;
+
     try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
-      progressHandler = ({ progress }) => {
-      onProgress(progress * 100);
-    };
-    ffmpeg.on('progress', progressHandler);
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
 
-    const volumeValue = (volume / 100).toFixed(2);
-    const args = ['-i', inputName];
+      // FFmpeg's log prints "Audio:" for every audio stream. None means there is nothing to change.
+      let hasAudio = false;
+      const probe = ({ message }) => { if (message.includes('Audio:')) hasAudio = true; };
+      ffmpeg.on('log', probe);
+      try { await ffmpeg.exec(['-i', inputName]); } catch { /* expected: no output file given */ }
+      ffmpeg.off('log', probe);
+      if (!hasAudio) throw new Error('This file has no sound in it. Try a different audio file, or a video that has sound.');
 
-    if (isVideo) {
-      // PRO-TIP: We copy the video stream directly without re-encoding (-c:v copy),
-      // and only process/filter the audio stream. This makes video volume changes extremely fast!
-      args.push('-c:v', 'copy');
-      args.push('-filter:a', `volume=${volumeValue}`);
-    } else {
-      args.push('-filter:a', `volume=${volumeValue}`);
-    }
+      progressHandler = ({ progress }) => onProgress(progress * 100);
+      ffmpeg.on('progress', progressHandler);
 
-    args.push(outputName);
+      // Videos keep their picture untouched (-c:v copy), so only the sound is processed.
+      await ffmpeg.exec(['-i', inputName, '-map', '0:v?', '-map', '0:a', '-c:v', 'copy', '-filter:a', `volume=${chosen.factor}`, outputName]);
 
-    await ffmpeg.exec(args);
-
-    const outputData = await ffmpeg.readFile(outputName);
-
-    // Cleanup FS
-    const blob = new Blob([outputData.buffer], { type: file.type || 'application/octet-stream' });
-    const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-
-    return {
-      blob,
-      name: `${baseName}_volume_${volume}pct.${inputExt}`
-    };
+      const data = await ffmpeg.readFile(outputName);
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      return {
+        blob: new Blob([data.buffer], { type: file.type || 'application/octet-stream' }),
+        name: `${baseName}_${Math.round(chosen.factor * 100)}pct.${inputExt}`,
+      };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
@@ -57,50 +56,28 @@ export default function BulkVolumeChanger() {
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <div className="flex justify-between text-xs font-semibold text-slate-300">
-          <span>Target Volume Gain</span>
-          <span className="text-sky-600 font-bold">{volume}%</span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="300"
-          value={volume}
-          onChange={(e) => setVolume(parseInt(e.target.value))}
-          disabled={processor.isProcessing}
-          className="range range-sky range-xs bg-white/5 border border-white/10 p-1 rounded-lg"
-        />
-        <div className="flex justify-between text-[10px] text-slate-400 font-bold px-1">
-          <span>Mute (0%)</span>
-          <span>Normal (100%)</span>
-          <span>Loud (300%)</span>
-        </div>
-      </div>
-      <p className="text-[10px] text-slate-400 leading-normal">
-        Boosting volume past 150% can lead to digital audio clipping/distortion if the source file is already recorded at a high volume.
-      </p>
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="Bulk Volume Changer"
-      description="Boost or reduce the loudness of multiple audio tracks or video background sounds instantly."
-      icon="fa-volume-high"
-      categoryName="Audio Tools"
-      categoryPath="/all-tools?cat=audio"
-      acceptTypes={{
-        'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'],
-        'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mkv']
-      }}
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/bulk-audio-volume"
+      name="Volume Changer"
+      title="Make audio louder or quieter"
+      intro="Turn the volume of many files up or down in one go. Your files keep their original format, and videos keep their picture."
+      accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'], 'video/*': ['.mp4', '.mov', '.webm', '.mkv'] }}
+      dropHint="Audio files like MP3, WAV and M4A. Videos work too: only the sound is changed."
+      processFile={processFile}
+      verb={{ action: 'Change volume', working: 'Changing volume' }}
+      steps={[
+        {
+          label: 'Pick how loud',
+          content: <QualitySlider label="Volume" levels={LEVELS} value={level} onChange={setLevel} />,
+        },
+      ]}
       faqs={[
-        { q: "Will this re-encode my videos?", a: "No. The video stream is copied block-for-block. Only the audio track is transcoded with the new volume, which takes just a few seconds." }
+        { q: 'Are my files uploaded anywhere?', a: 'No. Your files are changed inside your web browser, on your own computer. They never leave your device, and we never see them.' },
+        { q: 'Why does very loud audio crackle?', a: 'Every file has a loudest point it can hold. If you push the sound past it, the loudest parts get cut off and sound harsh. If you hear crackling, go back and pick a lower setting.' },
+        { q: 'Can I make quiet audio loud without any crackle?', a: 'Not always. A small boost like "A little louder" is usually safe. Big boosts work best on files that are quiet to begin with.' },
+        { q: 'Will my video get worse?', a: 'No. The picture is copied as it is. Only the sound is changed, so videos finish quickly.' },
+        { q: 'Does this keep my file format?', a: 'Yes. An MP3 stays an MP3 and a WAV stays a WAV. Formats like MP3 are saved again after the change, so there can be a very small loss in quality.' },
       ]}
     />
   );

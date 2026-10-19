@@ -1,192 +1,291 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Mic, Square, Pause, Play, Download, RotateCcw, AlertCircle } from 'lucide-react';
+import ToolFrame from '../../ui/ToolFrame';
+import { Button, Card } from '../../ui/controls';
+
+const FAQS = [
+  { q: 'Is my voice uploaded anywhere?', a: 'No. The recording stays in your browser. It is only saved to your device when you press Download.' },
+  { q: 'Why does my browser ask about the microphone?', a: 'Browsers always ask before a website can listen. Press Allow. You can change this later with the lock icon in the address bar.' },
+  { q: 'What kind of file do I get?', a: 'Usually a .webm audio file, or .mp4 in some browsers. It plays in most players. To get an MP3 or WAV, run it through one of our converter tools.' },
+  { q: 'Is there a time limit?', a: 'No fixed limit. Very long recordings use your device memory, so for hours of audio, record in several parts.' },
+  { q: 'The meter does not move. What is wrong?', a: 'Check that the right microphone is selected in your browser or system settings, and that it is not muted.' },
+];
+
+const formatTime = (sec) => {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0');
+  const s = (sec % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+};
+
+const pickMimeType = () => {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+  return options.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+};
+
+const micErrorMessage = (err) => {
+  const name = err && err.name;
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    return 'No microphone was found. Plug one in and try again.';
+  }
+  if (name === 'NotReadableError') {
+    return 'Your microphone is being used by another app. Close that app and try again.';
+  }
+  return 'Your browser blocked the microphone. Allow it in the address bar and try again.';
+};
 
 export default function VoiceRecorder() {
   const [status, setStatus] = useState('idle'); // idle, recording, paused, done
   const [audioURL, setAudioURL] = useState(null);
-  const [audioBlob, setAudioBlob] = useState(null);
+  const [fileExt, setFileExt] = useState('webm');
   const [elapsed, setElapsed] = useState(0);
+  const [level, setLevel] = useState(0);
   const [error, setError] = useState('');
-  const mediaRecorder = useRef(null);
-  const chunks = useRef([]);
-  const timerRef = useRef(null);
 
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const audioCtxRef = useRef(null);
+  const rafRef = useRef(0);
+  const urlRef = useRef(null);
+
+  // Timer: counts seconds only while recording
   useEffect(() => {
-    if (status === 'recording') {
-      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-    } else {
-      clearInterval(timerRef.current);
-    }
-    return () => clearInterval(timerRef.current);
+    if (status !== 'recording') return undefined;
+    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(id);
   }, [status]);
 
-  const formatTime = (sec) => {
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = (sec % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+  const stopMeter = () => {
+    cancelAnimationFrame(rafRef.current);
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    setLevel(0);
+  };
+
+  const stopStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  };
+
+  // Clean up on leaving the page
+  useEffect(() => () => {
+    cancelAnimationFrame(rafRef.current);
+    if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.onstop = null;
+      try { recorderRef.current.stop(); } catch { /* already stopped */ }
+    }
+    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+  }, []);
+
+  const startMeter = (stream) => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      audioCtxRef.current = ctx;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let peak = 0;
+        for (let i = 0; i < data.length; i += 1) {
+          peak = Math.max(peak, Math.abs(data[i] - 128));
+        }
+        setLevel(Math.min(1, (peak / 128) * 1.6));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch {
+      // The meter is a nice extra; recording still works without it.
+    }
   };
 
   const startRecording = async () => {
     setError('');
+    if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
+      setError('This browser cannot record audio. Try a recent version of Chrome, Edge, Firefox or Safari.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
-      chunks.current = [];
-      mr.ondataavailable = e => {
-        if (e.data.size > 0) chunks.current.push(e.data);
+      streamRef.current = stream;
+      const mimeType = pickMimeType();
+      const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       mr.onstop = () => {
-        const blob = new Blob(chunks.current, { type: 'audio/webm' });
+        const type = mr.mimeType || mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type });
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
         const url = URL.createObjectURL(blob);
-        setAudioBlob(blob);
+        urlRef.current = url;
+        setFileExt(type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm');
         setAudioURL(url);
         setStatus('done');
-        stream.getTracks().forEach(t => t.stop());
+        stopMeter();
+        stopStream();
       };
       mr.start(100);
-      mediaRecorder.current = mr;
+      recorderRef.current = mr;
       setElapsed(0);
       setStatus('recording');
-    } catch {
-      setError('Microphone access denied. Please allow microphone access in your browser.');
+      startMeter(stream);
+    } catch (err) {
+      stopStream();
+      setError(micErrorMessage(err));
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
-      mediaRecorder.current.stop();
-    }
+    const mr = recorderRef.current;
+    if (mr && mr.state !== 'inactive') mr.stop();
   };
 
   const pauseRecording = () => {
-    if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
-      mediaRecorder.current.pause();
+    const mr = recorderRef.current;
+    if (mr && mr.state === 'recording') {
+      mr.pause();
       setStatus('paused');
+      setLevel(0);
     }
   };
 
   const resumeRecording = () => {
-    if (mediaRecorder.current && mediaRecorder.current.state === 'paused') {
-      mediaRecorder.current.resume();
+    const mr = recorderRef.current;
+    if (mr && mr.state === 'paused') {
+      mr.resume();
       setStatus('recording');
     }
   };
 
-  const reset = () => {
-    setStatus('idle');
+  const recordAgain = () => {
+    if (urlRef.current) {
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    }
     setAudioURL(null);
-    setAudioBlob(null);
     setElapsed(0);
     setError('');
+    setStatus('idle');
   };
 
   const download = () => {
-    if (!audioBlob) return;
+    if (!audioURL) return;
     const a = document.createElement('a');
     a.href = audioURL;
-    a.download = `recording_${Date.now()}.webm`;
+    a.download = `recording_${Date.now()}.${fileExt}`;
     a.click();
   };
 
+  const live = status === 'recording' || status === 'paused';
+  const statusText = {
+    idle: 'Press Record to start',
+    recording: 'Recording…',
+    paused: 'Paused',
+    done: 'Done. Listen to it below.',
+  }[status];
+
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-12 space-y-10">
-      <div className="text-sm breadcrumbs text-slate-400">
-        <ul>
-          <li><Link to="/" className="hover:text-white transition-colors">Home</Link></li>
-          <li><Link to="/all-tools?cat=audio" className="hover:text-white transition-colors">Audio Tools</Link></li>
-          <li className="text-sky-600 font-medium">Voice Recorder</li>
-        </ul>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 border border-sky-200 text-sky-600">
-          <i className="fa-solid fa-microphone text-lg"></i>
-        </div>
-        <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight font-outfit">Voice Recorder</h1>
-          <p className="text-slate-400 text-sm">Record high-quality audio directly from your microphone. Fully private, no uploads.</p>
-        </div>
-      </div>
-
+    <ToolFrame
+      path="/tools/voice-recorder"
+      name="Voice Recorder"
+      title="Record your voice with your microphone"
+      intro="Press Record, speak, then press Stop. You can listen back and save the recording. Nothing is uploaded."
+      faqs={FAQS}
+    >
       {error && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4">
-          <p className="text-sm text-red-400"><i className="fa-solid fa-circle-exclamation mr-2"></i>{error}</p>
+        <div role="alert" className="flex items-start gap-3 rounded-xl border border-bad/30 bg-bad-soft p-4 text-bad">
+          <AlertCircle size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p className="text-[15px] font-medium">{error}</p>
         </div>
       )}
 
-      <div className="glass-card rounded-2xl border border-white/10 p-10 flex flex-col items-center gap-8">
-        {/* Timer */}
-        <div className="text-center">
-          <div className={`text-6xl font-mono font-bold tracking-widest ${status === 'recording' ? 'text-red-400' : 'text-white'}`}>
+      <Card className="flex flex-col items-center gap-6 py-8 text-center">
+        <div>
+          <div
+            className={`font-mono text-6xl font-bold tracking-widest ${status === 'recording' ? 'text-bad' : 'text-ink'}`}
+            aria-live="off"
+          >
             {formatTime(elapsed)}
           </div>
-          <p className="text-sm text-slate-400 mt-2">
-            {status === 'idle' && 'Press record to start'}
-            {status === 'recording' && <span className="flex items-center gap-1.5 justify-center"><span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>Recording...</span>}
-            {status === 'paused' && 'Paused'}
-            {status === 'done' && 'Recording complete'}
+          <p className="mt-2 flex items-center justify-center gap-2 text-sm text-muted" role="status">
+            {status === 'recording' && <span className="h-2 w-2 animate-pulse rounded-full bg-bad" aria-hidden="true" />}
+            {statusText}
           </p>
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center gap-4">
-          {status === 'idle' && (
-            <button
-              onClick={startRecording}
-              className="btn btn-circle btn-lg bg-red-500 hover:bg-red-600 border-0 text-white"
+        {live && (
+          <div className="w-full max-w-sm">
+            <div
+              className="h-3 w-full overflow-hidden rounded-full bg-sunken"
+              role="meter"
+              aria-label="Microphone level"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(level * 100)}
             >
-              <i className="fa-solid fa-microphone text-xl"></i>
-            </button>
+              <div
+                className="h-full rounded-full bg-wine transition-[width] duration-100"
+                style={{ width: `${Math.round(level * 100)}%` }}
+              />
+            </div>
+            <p className="mt-1.5 text-xs text-muted">This bar moves when the microphone hears you.</p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {status === 'idle' && (
+            <Button onClick={startRecording}>
+              <Mic size={18} aria-hidden="true" /> Record
+            </Button>
           )}
           {status === 'recording' && (
             <>
-              <button onClick={pauseRecording} className="btn btn-circle bg-amber-500 hover:bg-amber-600 border-0 text-white">
-                <i className="fa-solid fa-pause"></i>
-              </button>
-              <button onClick={stopRecording} className="btn btn-circle btn-lg bg-slate-700 hover:bg-slate-600 border-0 text-white">
-                <i className="fa-solid fa-stop text-xl"></i>
-              </button>
+              <Button variant="secondary" onClick={pauseRecording}>
+                <Pause size={18} aria-hidden="true" /> Pause
+              </Button>
+              <Button onClick={stopRecording}>
+                <Square size={18} aria-hidden="true" /> Stop
+              </Button>
             </>
           )}
           {status === 'paused' && (
             <>
-              <button onClick={resumeRecording} className="btn btn-circle bg-emerald-500 hover:bg-emerald-600 border-0 text-white">
-                <i className="fa-solid fa-play"></i>
-              </button>
-              <button onClick={stopRecording} className="btn btn-circle btn-lg bg-slate-700 hover:bg-slate-600 border-0 text-white">
-                <i className="fa-solid fa-stop text-xl"></i>
-              </button>
+              <Button variant="secondary" onClick={resumeRecording}>
+                <Play size={18} aria-hidden="true" /> Keep going
+              </Button>
+              <Button onClick={stopRecording}>
+                <Square size={18} aria-hidden="true" /> Stop
+              </Button>
             </>
           )}
           {status === 'done' && (
-            <button onClick={reset} className="btn btn-circle bg-sky-500 hover:bg-sky-600 border-0 text-white">
-              <i className="fa-solid fa-rotate-left"></i>
-            </button>
+            <>
+              <Button onClick={download}>
+                <Download size={18} aria-hidden="true" /> Download
+              </Button>
+              <Button variant="secondary" onClick={recordAgain}>
+                <RotateCcw size={18} aria-hidden="true" /> Record again
+              </Button>
+            </>
           )}
         </div>
 
-        {/* Playback */}
-        {audioURL && (
-          <div className="w-full space-y-4">
-            <audio controls src={audioURL} className="w-full rounded-xl" />
-            <button
-              onClick={download}
-              className="w-full btn bg-sky-500 hover:bg-sky-600 border-0 text-white font-semibold rounded-xl gap-2"
-            >
-              <i className="fa-solid fa-download"></i>
-              Download Recording (.webm)
-            </button>
-          </div>
+        {status === 'done' && audioURL && (
+          <audio controls src={audioURL} className="w-full max-w-md" />
         )}
-      </div>
-
-      <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/10 p-5 flex items-start gap-3">
-        <i className="fa-solid fa-shield-halved text-emerald-600 text-xl mt-0.5"></i>
-        <div>
-          <p className="text-sm font-semibold text-white">100% Private</p>
-          <p className="text-xs text-slate-400 mt-1">Your audio is recorded directly in your browser memory using the Web Audio API. Nothing is uploaded to any server.</p>
-        </div>
-      </div>
-    </div>
+      </Card>
+    </ToolFrame>
   );
 }

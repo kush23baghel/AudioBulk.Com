@@ -1,48 +1,50 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips, QualitySlider } from '../../ui/controls';
 
-const bitrates = [64, 96, 128, 160, 192];
+const FORMATS = [
+  { value: 'mp3', label: 'MP3', hint: 'Plays on every phone, computer and car. Pick this if you are not sure.', mime: 'audio/mpeg', codec: ['-c:a', 'libmp3lame'] },
+  { value: 'm4a', label: 'M4A', hint: 'Often sounds a bit better at the same size. Works best on iPhone and Mac.', mime: 'audio/mp4', codec: ['-c:a', 'aac'] },
+];
+
+const LEVELS = [
+  { label: 'Smallest file', detail: 'about 64 kbps, fine for voice and podcasts', kbps: '64k' },
+  { label: 'Small', detail: 'about 96 kbps, good for talking and casual listening', kbps: '96k' },
+  { label: 'Balanced', detail: 'about 128 kbps, good for most music', kbps: '128k' },
+  { label: 'Better sound', detail: 'about 160 kbps, close to the original for most people', kbps: '160k' },
+  { label: 'Best sound', detail: 'about 192 kbps, hard to tell from the original', kbps: '192k' },
+];
 
 export default function BulkAudioCompressor() {
-  const [bitrate, setBitrate] = useState(128);
-  const processor = useBulkProcessor();
+  const [format, setFormat] = useState('mp3');
+  const [level, setLevel] = useState(2);
+  const fmt = FORMATS.find((f) => f.value === format);
 
-  // The compressor execution logic
   const processFile = async (file, onProgress) => {
     const ffmpeg = await getFFmpeg();
-
+    const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
-    const inputName = `input_${Math.random().toString(36).substring(7)}.${inputExt}`;
-    const outputName = `output_${Math.random().toString(36).substring(7)}.mp3`;
-
-    // Write file to virtual FS
+    const inputName = `input_${id}.${inputExt}`;
+    const outputName = `output_${id}.${fmt.value}`;
     let progressHandler = null;
+
     try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
-      progressHandler = ({ progress }) => {
-      // progress is a float between 0 and 1
-      onProgress(progress * 100);
-    };
-    ffmpeg.on('progress', progressHandler);
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
 
-    // Exec compression
-    await ffmpeg.exec(['-i', inputName, '-c:a', 'libmp3lame', '-b:a', `${bitrate}k`, outputName]);
+      progressHandler = ({ progress }) => onProgress(progress * 100);
+      ffmpeg.on('progress', progressHandler);
 
-    // Read result
-    const outputData = await ffmpeg.readFile(outputName);
+      // -vn drops cover art and video so only the sound is kept.
+      await ffmpeg.exec(['-i', inputName, '-vn', ...fmt.codec, '-b:a', LEVELS[level].kbps, outputName]);
 
-    // Cleanup FS
-    // Build Blob
-    const blob = new Blob([outputData.buffer], { type: 'audio/mp3' });
-    const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-
-    return {
-      blob,
-      name: `${baseName}.mp3`
-    };
+      const data = await ffmpeg.readFile(outputName);
+      if (!data || data.length === 0) {
+        throw new Error('This file could not be made smaller. Check that it is a working audio file and try again.');
+      }
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      return { blob: new Blob([data.buffer], { type: fmt.mime }), name: `${baseName}_smaller.${fmt.value}` };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
@@ -50,46 +52,31 @@ export default function BulkAudioCompressor() {
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-3">
-      <label className="text-xs font-semibold text-slate-300">Target Bitrate</label>
-      <div className="grid grid-cols-3 gap-2">
-        {bitrates.map((br) => (
-          <button
-            key={br}
-            onClick={() => setBitrate(br)}
-            disabled={processor.isProcessing}
-            className={`btn btn-sm uppercase font-bold tracking-wider rounded-xl ${
-              bitrate === br
-                ? 'bg-sky-500 hover:bg-sky-600 text-slate-950 border-0'
-                : 'bg-white/5 text-slate-300 hover:bg-white/10 border border-white/10'
-            }`}
-          >
-            {br}kbps
-          </button>
-        ))}
-      </div>
-      <p className="text-[10px] text-slate-400">
-        Lower bitrate means smaller files but reduced audio quality. 128kbps is a good balance for most use cases.
-      </p>
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="Bulk Audio Compressor"
-      description="Reduce file sizes of multiple audio files by optimizing bitrate. Lower bitrate = smaller file but reduced quality."
-      icon="fa-compress"
-      categoryName="Audio Tools"
-      categoryPath="/all-tools?cat=audio"
-      acceptTypes={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'] }}
-      optionsContent={optionsContent}
-      optionsTitle="Compression Settings"
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/bulk-audio-compressor"
+      name="Audio Compressor"
+      title="Make audio files smaller"
+      intro="Shrink your audio files so they take less space and send faster. Choose how small you want them, add your files, and get them all back at once."
+      accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'] }}
+      dropHint="Audio files like WAV, MP3, M4A and FLAC."
+      processFile={processFile}
+      verb={{ action: 'Make smaller', working: 'Making smaller' }}
+      steps={[
+        {
+          label: 'Pick a format',
+          content: <ChoiceChips label="Format" options={FORMATS} value={format} onChange={setFormat} />,
+        },
+        {
+          label: 'Pick a size',
+          content: <QualitySlider label="Size" levels={LEVELS} value={level} onChange={setLevel} />,
+        },
+      ]}
       faqs={[
-        { q: "How does audio compression work?", a: "Audio compression reduces file size by lowering the bitrate, which determines how much data is used per second of audio. Lower bitrates discard more audio detail to achieve smaller files." },
-        { q: "Which bitrate should I choose?", a: "128kbps offers a good balance between quality and file size for most listeners. Use 192kbps for higher fidelity, or 64kbps when file size is the top priority (e.g. voice recordings or podcasts)." }
+        { q: 'How much smaller will my files get?', a: 'It depends on what you start with. Big files like WAV usually shrink a lot, often to a tenth of their size. Files that are already MP3 or M4A shrink less.' },
+        { q: 'Will it sound worse?', a: 'A little, because making a file smaller means throwing away sound detail that is hard to hear. "Balanced" is fine for most music. Use "Best sound" if you care about quality.' },
+        { q: 'Can a file get bigger?', a: 'Yes, if it was already very small. For example, a 64 kbps MP3 made "Best sound" gets bigger and does not sound better. Pick a smaller level for those.' },
+        { q: 'Are my files uploaded anywhere?', a: 'No. Everything happens inside your web browser, on your own computer. Your files never leave your device.' },
       ]}
     />
   );

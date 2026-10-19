@@ -1,96 +1,100 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips } from '../../ui/controls';
 
-const EQ_PRESETS = [
-  { label: 'Bass Boost', filter: 'bass=g=10:f=100:w=0.5' },
-  { label: 'Treble Boost', filter: 'treble=g=8:f=5000:w=0.5' },
-  { label: 'Voice Enhance', filter: 'equalizer=f=300:width_type=o:width=2:g=3,equalizer=f=3000:width_type=o:width=2:g=4' },
-  { label: 'Remove Bass', filter: 'bass=g=-15:f=100:w=0.5' },
-  { label: 'Vocal Remove (EQ)', filter: 'equalizer=f=300:width_type=o:width=2:g=-20,equalizer=f=3000:width_type=o:width=2:g=-20' },
-  { label: 'Radio Effect', filter: 'highpass=f=300,lowpass=f=3400,equalizer=f=1500:width_type=o:width=2:g=4' },
-  { label: 'Deep Bass', filter: 'bass=g=15:f=60:w=0.3,treble=g=-5:f=10000:w=0.5' },
-  { label: 'Flat (No EQ)', filter: null },
+const PRESETS = [
+  { value: 'more-bass', label: 'More bass', hint: 'Fuller, deeper sound. Good for music on small speakers.', suffix: 'more_bass', filter: 'bass=g=8:f=100:w=0.5' },
+  { value: 'less-bass', label: 'Less bass', hint: 'Takes away rumble and boominess.', suffix: 'less_bass', filter: 'bass=g=-10:f=100:w=0.5' },
+  { value: 'clear-voice', label: 'Clear voice', hint: 'Makes speech easier to understand, like a talk recorded on a phone.', suffix: 'clear_voice', filter: 'highpass=f=80,equalizer=f=250:width_type=o:width=2:g=-3,equalizer=f=3000:width_type=o:width=2:g=4' },
+  { value: 'brighter', label: 'Brighter', hint: 'Adds sparkle and detail to dull-sounding audio.', suffix: 'brighter', filter: 'treble=g=6:f=5000:w=0.5' },
+  { value: 'radio', label: 'Radio sound', hint: 'Thin and punchy, like an old radio or a phone call.', suffix: 'radio', filter: 'highpass=f=300,lowpass=f=3400,equalizer=f=1500:width_type=o:width=2:g=4' },
+  { value: 'no-hum', label: 'Remove low hum', hint: 'Cuts the low buzz from fans, air conditioners and power lines.', suffix: 'no_hum', filter: 'highpass=f=100,equalizer=f=50:width_type=q:width=8:g=-20,equalizer=f=60:width_type=q:width=8:g=-20' },
 ];
 
+const OUTPUTS = [
+  { value: 'same', label: 'Same as my file', hint: 'Keeps your file type when it can. Files it cannot keep become MP3.' },
+  { value: 'mp3', label: 'MP3', hint: 'Plays on every phone, computer and car.' },
+];
+
+const MP3 = { ext: 'mp3', mime: 'audio/mpeg', codec: ['-c:a', 'libmp3lame', '-b:a', '192k'] };
+const SAME_FORMATS = {
+  mp3: MP3,
+  wav: { ext: 'wav', mime: 'audio/wav', codec: ['-c:a', 'pcm_s16le'] },
+  flac: { ext: 'flac', mime: 'audio/flac', codec: ['-c:a', 'flac'] },
+  m4a: { ext: 'm4a', mime: 'audio/mp4', codec: ['-c:a', 'aac', '-b:a', '192k'] },
+  aac: { ext: 'aac', mime: 'audio/aac', codec: ['-c:a', 'aac', '-b:a', '192k'] },
+  ogg: { ext: 'ogg', mime: 'audio/ogg', codec: ['-c:a', 'libvorbis', '-q:a', '5'] },
+};
+
 export default function AudioEqualizer() {
-  const [preset, setPreset] = useState(EQ_PRESETS[0]);
-  const processor = useBulkProcessor();
+  const [presetValue, setPresetValue] = useState('more-bass');
+  const [output, setOutput] = useState('same');
+  const preset = PRESETS.find((p) => p.value === presetValue);
 
   const processFile = async (file, onProgress) => {
     const ffmpeg = await getFFmpeg();
-    const ext = file.name.split('.').pop();
-    const uid = Math.random().toString(36).substring(7);
-    const inputName = `input_${uid}.${ext}`;
-    const finalOut = `output_eq_${uid}.mp3`;
-
+    const id = Math.random().toString(36).slice(2, 9);
+    const inputExt = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'tmp';
+    const target = output === 'same' ? (SAME_FORMATS[inputExt] || MP3) : MP3;
+    const inputName = `input_${id}.${inputExt}`;
+    const outputName = `output_${id}.${target.ext}`;
     let progressHandler = null;
+
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+      let hasAudio = false;
+      const probe = ({ message }) => { if (message.includes('Audio:')) hasAudio = true; };
+      ffmpeg.on('log', probe);
+      try { await ffmpeg.exec(['-i', inputName]); } catch { /* expected: no output file given */ }
+      ffmpeg.off('log', probe);
+      if (!hasAudio) throw new Error('This file has no sound in it. Try a different audio file, or a video that has sound.');
+
       progressHandler = ({ progress }) => onProgress(progress * 100);
       ffmpeg.on('progress', progressHandler);
-    const args = ['-i', inputName];
-    if (preset.filter) args.push('-af', preset.filter);
-    args.push('-c:a', 'libmp3lame', '-b:a', '192k', finalOut);
 
-    await ffmpeg.exec(args);
+      // -vn drops cover art and video so the result is audio only.
+      const code = await ffmpeg.exec(['-i', inputName, '-vn', '-af', preset.filter, ...target.codec, outputName]);
+      if (code !== 0) throw new Error('This file could not be changed. It may be damaged. Try a different file.');
 
-    const data = await ffmpeg.readFile(finalOut);
-    const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-    const baseName = file.name.replace(/\.[^.]+$/, '');
-    return { blob, name: `${baseName}_${preset.label.replace(/\s+/g, '_')}.mp3` };
+      const data = await ffmpeg.readFile(outputName);
+      if (!data || data.length === 0) throw new Error('This file could not be changed. It may be damaged. Try a different file.');
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      return { blob: new Blob([data.buffer], { type: target.mime }), name: `${baseName}_${preset.suffix}.${target.ext}` };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
-      await safeDelete(ffmpeg, finalOut);
+      await safeDelete(ffmpeg, outputName);
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">EQ Preset</label>
-        <div className="flex flex-col gap-1.5">
-          {EQ_PRESETS.map((p) => (
-            <button
-              key={p.label}
-              onClick={() => setPreset(p)}
-              className={`btn btn-xs justify-start px-3 py-2.5 h-auto text-xs font-medium rounded-xl border ${
-                preset.label === p.label
-                  ? 'bg-sky-500 text-white border-sky-500'
-                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      {preset.filter && (
-        <div className="rounded-xl bg-white/5 border border-white/10 p-3">
-          <p className="text-[10px] text-slate-400 font-mono break-all">{preset.filter}</p>
-        </div>
-      )}
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="Audio Equalizer"
-      description="Apply bass boost, vocal highlights, radio effects, or custom EQ filters to your audio files. Outputs MP3 at 192kbps."
-      icon="fa-sliders-h"
-      categoryName="Audio Tools"
-      categoryPath="/all-tools?cat=audio"
-      acceptTypes={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'] }}
-      optionsTitle="EQ Presets"
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/audio-equalizer"
+      name="Audio Equalizer"
+      title="Change how your audio sounds"
+      intro="Pick a sound like More bass or Clear voice and apply it to your files in one click. Add as many files as you like."
+      accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '.wma', '.opus'], 'video/*': ['.mp4', '.mov', '.webm', '.mkv'] }}
+      dropHint="Audio files like MP3, WAV, M4A and FLAC. Videos work too: you get just the sound."
+      processFile={processFile}
+      steps={[
+        {
+          label: 'Pick a sound',
+          content: <ChoiceChips label="Sound" options={PRESETS} value={presetValue} onChange={setPresetValue} />,
+        },
+        {
+          label: 'Pick the file type',
+          content: <ChoiceChips label="File type" options={OUTPUTS} value={output} onChange={setOutput} />,
+        },
+      ]}
       faqs={[
-        { q: 'What is an equalizer?', a: 'An EQ boosts or cuts specific frequency ranges. Bass boost enhances low frequencies (kick drums, bass guitar), treble boost enhances highs (cymbals, vocals).' },
-        { q: 'What format is the output?', a: 'Output is always MP3 at 192kbps for broad compatibility.' }
+        { q: 'Are my files uploaded anywhere?', a: 'No. Your files are changed inside your web browser, on your own computer. They never leave your device, and we never see them.' },
+        { q: 'What does an equalizer do?', a: 'It makes some parts of the sound louder or quieter. Low sounds are the bass, like drums. High sounds are the treble, like cymbals and the "s" in speech.' },
+        { q: 'Can I hear it before I download?', a: 'Not yet. Try one sound on one file first, play the result, and come back if you want a different one.' },
+        { q: 'Will "Clear voice" remove background noise?', a: 'Not completely. It lifts the parts of the sound that make speech easy to understand and cuts low rumble, but it cannot remove noise like traffic or chatter.' },
+        { q: 'Which file type should I pick?', a: '"Same as my file" is best for most people. If your file is a type we cannot save in, such as WMA or a video, you get an MP3 instead.' },
       ]}
     />
   );

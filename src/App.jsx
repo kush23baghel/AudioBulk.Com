@@ -95,7 +95,17 @@ export default function App() {
           <Route path="all-tools" element={<AllTools />} />
           <Route path="privacy" element={<PrivacyPolicy />} />
           <Route path="terms" element={<TermsOfService />} />
+          {/* Audio tools */}
           <Route path="tools/bulk-audio-converter" element={<BulkAudioConverter />} />
+          <Route path="tools/bulk-audio-compressor" element={<BulkAudioCompressor />} />
+          <Route path="tools/bulk-video-to-audio" element={<BulkVideoToAudioConverter />} />
+          <Route path="tools/bulk-audio-speed" element={<BulkSpeedChanger />} />
+          <Route path="tools/bulk-audio-volume" element={<BulkVolumeChanger />} />
+          <Route path="tools/vocal-remover" element={<VocalRemover />} />
+          <Route path="tools/pitch-shifter" element={<PitchShifter />} />
+          <Route path="tools/audio-equalizer" element={<AudioEqualizer />} />
+          <Route path="tools/voice-recorder" element={<VoiceRecorder />} />
+          <Route path="tools/text-to-speech" element={<TextToSpeech />} />
           {/* Real 404 (noindex) instead of silently serving Home at every unknown URL */}
           <Route path="*" element={<NotFound />} />
         </Route>
@@ -103,11 +113,7 @@ export default function App() {
         <Route path="/" element={<Layout />}>
           
           {/* Phase 1 Tools */}
-          <Route path="tools/bulk-audio-compressor" element={<BulkAudioCompressor />} />
           <Route path="tools/bulk-video-compressor" element={<BulkVideoCompressor />} />
-          <Route path="tools/bulk-video-to-audio" element={<BulkVideoToAudioConverter />} />
-          <Route path="tools/bulk-audio-speed" element={<BulkSpeedChanger />} />
-          <Route path="tools/bulk-audio-volume" element={<BulkVolumeChanger />} />
           <Route path="tools/video-frame-extractor" element={<VideoFrameExtractor />} />
 
           {/* Phase 2 Tools */}
@@ -116,11 +122,6 @@ export default function App() {
           <Route path="tools/fb-ad-cost" element={<AdCostCalculator />} />
           
           {/* Generated Routes */}
-          <Route path="tools/vocal-remover" element={<VocalRemover />} />
-          <Route path="tools/pitch-shifter" element={<PitchShifter />} />
-          <Route path="tools/audio-equalizer" element={<AudioEqualizer />} />
-          <Route path="tools/voice-recorder" element={<VoiceRecorder />} />
-          <Route path="tools/text-to-speech" element={<TextToSpeech />} />
           <Route path="tools/first-last-frame-extractor" element={<FirstLastFrameExtractor />} />
           <Route path="tools/bulk-video-converter" element={<BulkVideoConverter />} />
           <Route path="tools/video-trimmer" element={<VideoTrimmer />} />

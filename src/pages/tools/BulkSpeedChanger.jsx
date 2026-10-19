@@ -1,94 +1,72 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips } from '../../ui/controls';
 
-const speedOptions = [
-  { label: '0.25x (Very Slow)', value: 0.25 },
-  { label: '0.5x (Slow)', value: 0.5 },
-  { label: '0.75x', value: 0.75 },
-  { label: '1.0x (Normal)', value: 1.0 },
-  { label: '1.25x', value: 1.25 },
-  { label: '1.5x (Fast)', value: 1.5 },
-  { label: '2.0x (Double)', value: 2.0 },
-  { label: '4.0x (Very Fast)', value: 4.0 }
+const SPEEDS = [
+  { value: '0.25', label: '0.25×', hint: 'Four times slower. Good for picking out fast words.' },
+  { value: '0.5', label: '0.5×', hint: 'Half speed. The file becomes twice as long.' },
+  { value: '0.75', label: '0.75×', hint: 'A little slower. Easier to follow.' },
+  { value: '1.25', label: '1.25×', hint: 'A little faster. Hardly changes how it sounds.' },
+  { value: '1.5', label: '1.5×', hint: 'Faster, still easy to understand. Popular for podcasts.' },
+  { value: '2', label: '2×', hint: 'Double speed. The file becomes half as long.' },
+  { value: '3', label: '3×', hint: 'Three times faster. Good for skimming.' },
+  { value: '4', label: '4×', hint: 'Four times faster. Speech gets hard to follow.' },
 ];
 
-// Generates the chained atempo filter string for values < 0.5 or > 2.0
+// One atempo filter only accepts 0.5 to 2.0, so bigger or smaller changes are chained.
 const getAtempoFilter = (speed) => {
-  if (speed >= 0.5 && speed <= 2.0) {
-    return `atempo=${speed}`;
-  }
-  if (speed > 2.0) {
-    const parts = [];
-    let remaining = speed;
-    while (remaining > 2.0) {
-      parts.push('atempo=2.0');
-      remaining /= 2.0;
-    }
-    parts.push(`atempo=${remaining}`);
-    return parts.join(',');
-  }
-  if (speed < 0.5) {
-    const parts = [];
-    let remaining = speed;
-    while (remaining < 0.5) {
-      parts.push('atempo=0.5');
-      remaining *= 2.0;
-    }
-    parts.push(`atempo=${remaining}`);
-    return parts.join(',');
-  }
-  return 'atempo=1.0';
+  const parts = [];
+  let remaining = speed;
+  while (remaining > 2) { parts.push('atempo=2.0'); remaining /= 2; }
+  while (remaining < 0.5) { parts.push('atempo=0.5'); remaining *= 2; }
+  parts.push(`atempo=${remaining}`);
+  return parts.join(',');
 };
 
+const MIME = { mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac', ogg: 'audio/ogg', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska' };
+const VIDEO_EXT = ['mp4', 'mov', 'webm', 'mkv', 'avi'];
+
 export default function BulkSpeedChanger() {
-  const [speed, setSpeed] = useState(1.5);
-  const processor = useBulkProcessor();
+  const [speed, setSpeed] = useState('1.5');
 
   const processFile = async (file, onProgress) => {
     const ffmpeg = await getFFmpeg();
-    const isVideo = file.type.startsWith('video') || ['.mp4', '.mkv', '.webm', '.mov', '.avi'].some(ext => file.name.endsWith(ext));
-    
-    const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'mp4';
-    const inputName = `input_${Math.random().toString(36).substring(7)}.${inputExt}`;
-    const outputName = `output_${Math.random().toString(36).substring(7)}.${inputExt}`;
-
+    const factor = Number(speed);
+    const id = Math.random().toString(36).slice(2, 9);
+    const inputExt = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'tmp';
+    const isVideo = file.type.startsWith('video') || VIDEO_EXT.includes(inputExt);
+    const inputName = `input_${id}.${inputExt}`;
+    const outputName = `output_${id}.${inputExt}`;
     let progressHandler = null;
+
     try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
-      progressHandler = ({ progress }) => {
-      onProgress(progress * 100);
-    };
-    ffmpeg.on('progress', progressHandler);
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
 
-    const args = ['-i', inputName];
+      let hasAudio = false;
+      const probe = ({ message }) => { if (message.includes('Audio:')) hasAudio = true; };
+      ffmpeg.on('log', probe);
+      try { await ffmpeg.exec(['-i', inputName]); } catch { /* expected: no output file given */ }
+      ffmpeg.off('log', probe);
+      if (!hasAudio) throw new Error('This file has no sound in it. Try a different audio file, or a video that has sound.');
 
-    if (isVideo) {
-      // For video, adjust video speed using setpts and audio speed using atempo
-      args.push('-filter:v', `setpts=${1 / speed}*PTS`);
-      args.push('-filter:a', getAtempoFilter(speed));
-      args.push('-preset', 'veryfast');
-    } else {
-      // For audio only, adjust audio speed using atempo
-      args.push('-filter:a', getAtempoFilter(speed));
-    }
+      progressHandler = ({ progress }) => onProgress(progress * 100);
+      ffmpeg.on('progress', progressHandler);
 
-    args.push(outputName);
+      const args = ['-i', inputName];
+      if (isVideo) {
+        // Video needs its picture sped up by the same amount, so sound and picture stay together.
+        args.push('-filter:v', `setpts=${1 / factor}*PTS`, '-preset', 'veryfast');
+      }
+      args.push('-filter:a', getAtempoFilter(factor), outputName);
+      const code = await ffmpeg.exec(args);
+      if (code !== 0) throw new Error('This file could not be changed. It may be damaged. Try a different file.');
 
-    await ffmpeg.exec(args);
-
-    const outputData = await ffmpeg.readFile(outputName);
-
-    // Cleanup FS
-    const blob = new Blob([outputData.buffer], { type: file.type || 'application/octet-stream' });
-    const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-
-    return {
-      blob,
-      name: `${baseName}_${speed}x.${inputExt}`
-    };
+      const data = await ffmpeg.readFile(outputName);
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      const ext = inputExt === 'tmp' ? 'mp3' : inputExt;
+      return { blob: new Blob([data.buffer], { type: MIME[ext] || 'application/octet-stream' }), name: `${baseName}_${speed}x.${ext}` };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
@@ -96,50 +74,27 @@ export default function BulkSpeedChanger() {
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300">Choose Playback Speed</label>
-        <div className="flex flex-col gap-2">
-          {speedOptions.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setSpeed(opt.value)}
-              disabled={processor.isProcessing}
-              className={`btn btn-xs justify-between px-4 py-2.5 h-auto text-xs font-bold rounded-xl border border-white/10 ${
-                speed === opt.value
-                  ? 'bg-sky-500 hover:bg-sky-600 text-slate-950 border-0'
-                  : 'bg-white/5 text-slate-300 hover:bg-white/10'
-              }`}
-            >
-              <span>{opt.label}</span>
-              {speed === opt.value && <i className="fa-solid fa-circle-check text-slate-950 text-sm"></i>}
-            </button>
-          ))}
-        </div>
-      </div>
-      <p className="text-[10px] text-slate-400 leading-normal">
-        Changes speed without modifying the audio pitch. Works for both standalone audio files and full video uploads.
-      </p>
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="Bulk Speed Changer"
-      description="Increase or decrease playback speeds of multiple audio or video files simultaneously."
-      icon="fa-gauge"
-      categoryName="Audio Tools"
-      categoryPath="/all-tools?cat=audio"
-      acceptTypes={{
-        'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'],
-        'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mkv']
-      }}
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/bulk-audio-speed"
+      name="Audio Speed Changer"
+      title="Make audio faster or slower"
+      intro="Speed up or slow down many audio files at once. Voices keep their natural sound, they do not turn squeaky or deep."
+      accept={{ 'audio/*': ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a'], 'video/*': ['.mp4', '.mov', '.webm', '.mkv'] }}
+      dropHint="Audio files like MP3, WAV and M4A. Videos work too, and the picture speeds up with the sound."
+      processFile={processFile}
+      steps={[
+        {
+          label: 'Pick a speed',
+          content: <ChoiceChips label="Speed" options={SPEEDS} value={speed} onChange={setSpeed} />,
+        },
+      ]}
       faqs={[
-        { q: "Will this change the pitch of human vocals?", a: "No. The tool uses a pitch-preservation algorithm (atempo filter) to ensure voices stay natural, just faster or slower." }
+        { q: 'Are my files uploaded anywhere?', a: 'No. Your files are changed inside your web browser, on your own computer. They never leave your device.' },
+        { q: 'Will the voice sound squeaky or deep?', a: 'No. The pitch stays the same, only the speed changes. Very fast or very slow settings can still sound a little rough.' },
+        { q: 'Will the file be shorter or longer?', a: 'Yes. At 2× a 10 minute file becomes 5 minutes. At 0.5× it becomes 20 minutes.' },
+        { q: 'Does it keep my file format?', a: 'Yes. An MP3 stays an MP3 and a WAV stays a WAV. The sound is saved again, so lossy formats like MP3 lose a tiny bit of quality.' },
+        { q: 'Can I change the speed of a video?', a: 'Yes. Add an MP4, MOV or WebM video and the picture and sound both speed up or slow down together.' },
       ]}
     />
   );
