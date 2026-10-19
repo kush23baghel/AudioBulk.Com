@@ -1,75 +1,53 @@
-import { Link } from 'react-router-dom';
+import LegalPage from '../ui/LegalPage';
+
+const SECTIONS = [
+  {
+    title: 'Your files stay on your computer',
+    body: [
+      'Almost every AudioBulk tool (audio, video, GIF and image) works inside your web browser, on your own device.',
+      'Your files are never uploaded to our servers, never stored online, and never seen by us or anyone else.',
+    ],
+  },
+  {
+    title: 'AI writing tools',
+    body: [
+      'The AI writing tools send the text you type to OpenRouter, an outside AI service, so it can write the answer. This only happens when you press the button to generate something.',
+      'If you add your own AI key, it is saved only in your browser. It is sent only to OpenRouter, never to AudioBulk.',
+      'OpenRouter and the AI companies behind each model (such as Meta, Anthropic or Google) have their own privacy rules for the text they receive. Please read them if this matters to you.',
+    ],
+  },
+  {
+    title: 'What we collect',
+    body: [
+      'No account: you never need to sign up, give an email address or share who you are.',
+      'Visit counts: we may count visits and which tools are popular, without anything that identifies you, so we know what to improve.',
+      'Saved settings: your browser stores a few things for you, such as your recently used tools and your AI key, so they are still there next time. This stays on your device.',
+    ],
+  },
+  {
+    title: 'Outside services',
+    body: [
+      'To load fonts, icons and the audio and video engine, your browser downloads files from a few outside services (Google Fonts, cdnjs and unpkg). Like any website, they can see your IP address when your browser asks for those files.',
+      'Links to other websites follow those websites’ own privacy rules.',
+    ],
+  },
+  {
+    title: 'Changes to this page',
+    body: ['If this policy changes, we will update this page and the date at the top.'],
+  },
+  {
+    title: 'Questions',
+    body: ['If you have a question about privacy, open an issue on our GitHub page: github.com/kush23baghel/AudioBulk.Com.'],
+  },
+];
 
 export default function PrivacyPolicy() {
   return (
-    <div className="min-h-screen pt-24 pb-20">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-        <div className="nav-glass rounded-2xl p-8 md:p-12 border border-white/5">
-          <h1 className="font-sora text-3xl md:text-4xl font-bold text-white mb-8">Privacy Policy</h1>
-          
-          <div className="space-y-8 text-slate-300 font-inter leading-relaxed">
-            <section>
-              <h2 className="text-xl font-semibold text-white mb-4">1. Our Core Privacy Principle: Local Processing</h2>
-              <p>
-                At AudioBulk, privacy is not an afterthought; it is the foundation of our architecture. 
-                <strong> Almost all media processing (Audio, Video, GIF, Image) happens entirely locally on your device.</strong>
-              </p>
-              <p className="mt-2">
-                We use WebAssembly (WASM) and modern browser APIs to process your files directly within your browser. 
-                This means your sensitive media files are <strong>never uploaded to our servers</strong>, never stored in the cloud, and never accessible to us or any third party.
-              </p>
-            </section>
-
-            <section>
-              <h2 className="text-xl font-semibold text-white mb-4">2. AI Tools and External APIs</h2>
-              <p>
-                AudioBulk includes a suite of AI-powered text generators. To provide these services, we integrate with third-party LLM providers (such as OpenRouter).
-              </p>
-              <p className="mt-2">
-                When you use our AI tools, the text prompts you enter are sent to the configured API provider to generate the response. 
-                Your API keys (if provided locally) are stored only in your browser's local storage or your local environment and are never transmitted to AudioBulk servers.
-                Please review the privacy policies of the respective AI models (e.g., Meta, Anthropic, Google) regarding how they handle prompt data.
-              </p>
-            </section>
-
-            <section>
-              <h2 className="text-xl font-semibold text-white mb-4">3. Data Collection and Usage</h2>
-              <ul className="list-disc pl-5 space-y-2">
-                <li><strong>Personal Information:</strong> We do not require you to create an account, provide an email address, or share any personal identity information to use AudioBulk.</li>
-                <li><strong>Usage Analytics:</strong> We may collect anonymous, aggregated usage statistics (such as page views or tool popularity) to help us improve the platform. This data contains no personally identifiable information.</li>
-                <li><strong>Cookies:</strong> We use minimal local storage (like cookies or localStorage) solely to save your preferences (e.g., theme choice, local API keys) so you have a seamless experience across sessions.</li>
-              </ul>
-            </section>
-
-            <section>
-              <h2 className="text-xl font-semibold text-white mb-4">4. Third-Party Services</h2>
-              <p>
-                AudioBulk may contain links to third-party websites or use third-party CDNs (like Google Fonts or FontAwesome) to deliver assets. These services may collect IP addresses as part of their standard web serving process.
-              </p>
-            </section>
-
-            <section>
-              <h2 className="text-xl font-semibold text-white mb-4">5. Changes to This Policy</h2>
-              <p>
-                We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page. You are advised to review this Privacy Policy periodically for any changes.
-              </p>
-            </section>
-
-            <section>
-              <h2 className="text-xl font-semibold text-white mb-4">6. Contact Us</h2>
-              <p>
-                If you have any questions about this Privacy Policy, please contact us through our official channels.
-              </p>
-            </section>
-            
-            <div className="pt-8 mt-8 border-t border-white/10 flex justify-end">
-              <Link to="/" className="btn-primary-glow px-6 py-2.5 rounded-xl font-semibold text-sm">
-                Return Home
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <LegalPage
+      title="Privacy Policy"
+      intro="The short version: your files never leave your computer, and we don't need to know who you are."
+      updated="19 October 2026"
+      sections={SECTIONS}
+    />
   );
 }

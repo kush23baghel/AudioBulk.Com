@@ -1,9 +1,10 @@
 import { Helmet } from 'react-helmet-async';
+import { toolsList } from '../data/tools';
 
 export default function SeoMeta({ title, description, url = 'https://audiobulk.com', image = 'https://audiobulk.com/og-image.png' }) {
   const siteName = 'AudioBulk';
-  const fullTitle = title ? `${title} | ${siteName}` : `${siteName} - 70+ Free Browser-Based Tools`;
-  const defaultDescription = 'Your ultimate browser-based toolkit. 70 free tools for audio, video, GIF, AI writing & more. 100% private and runs locally.';
+  const fullTitle = title ? `${title} | ${siteName}` : `${siteName}: ${toolsList.length} free tools for audio, video, GIFs and writing`;
+  const defaultDescription = `${toolsList.length} free tools for audio, video, GIFs and AI writing that work in your browser. No ads, no sign-up, and your files never leave your computer.`;
   const finalDescription = description || defaultDescription;
 
   return (

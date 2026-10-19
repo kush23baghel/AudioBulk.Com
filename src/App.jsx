@@ -91,14 +91,16 @@ export default function App() {
       <Routes>
         {/* Redesigned pages (light "Quiet tool" look). Tools move here one by one as they are rebuilt. */}
         <Route element={<Shell />}>
-          <Route path="tools/bulk-audio-converter" element={<BulkAudioConverter />} />
-        </Route>
-
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Home />} />
+          <Route path="/" element={<Home />} />
           <Route path="all-tools" element={<AllTools />} />
           <Route path="privacy" element={<PrivacyPolicy />} />
           <Route path="terms" element={<TermsOfService />} />
+          <Route path="tools/bulk-audio-converter" element={<BulkAudioConverter />} />
+          {/* Real 404 (noindex) instead of silently serving Home at every unknown URL */}
+          <Route path="*" element={<NotFound />} />
+        </Route>
+
+        <Route path="/" element={<Layout />}>
           
           {/* Phase 1 Tools */}
           <Route path="tools/bulk-audio-compressor" element={<BulkAudioCompressor />} />
@@ -177,9 +179,6 @@ export default function App() {
           <Route path="tools/yt-description-gen" element={<YtDescriptionGen />} />
           <Route path="tools/yt-channel-name" element={<YtChannelName />} />
           <Route path="tools/newsletter-generator" element={<NewsletterGenerator />} />
-
-          {/* Real 404 (noindex) instead of silently serving Home at every unknown URL */}
-          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </BrowserRouter>

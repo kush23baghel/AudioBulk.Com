@@ -62,7 +62,7 @@ test.describe('Command palette (Ctrl+K)', () => {
     await page.locator('body').click();
     await page.keyboard.press('Control+k');
 
-    const search = page.getByPlaceholder(/Search 70\+ tools/i);
+    const search = page.getByPlaceholder(/What do you want to do/i);
     await expect(search).toBeVisible();
 
     await search.fill('character counter');
@@ -78,9 +78,9 @@ test.describe('Command palette (Ctrl+K)', () => {
     await expect(page.locator('h1').first()).toBeVisible();
     await page.locator('body').click();
     await page.keyboard.press('Control+k');
-    await expect(page.getByPlaceholder(/Search 70\+ tools/i)).toBeVisible();
+    await expect(page.getByPlaceholder(/What do you want to do/i)).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(page.getByPlaceholder(/Search 70\+ tools/i)).toBeHidden();
+    await expect(page.getByPlaceholder(/What do you want to do/i)).toBeHidden();
   });
 });
 

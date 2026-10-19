@@ -1,79 +1,46 @@
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { toolsList } from '../data/tools';
+import { ToolIcon } from '../ui/icons';
 
-// A handful of popular entry points, so a bad URL is still a useful page.
-const SUGGESTED_IDS = [
-  'bulk-audio-converter',
-  'bulk-video-compressor',
-  'vocal-remover',
-  'video-to-gif',
-  'ai-story-generator',
-  'word-counter',
-];
+// A few popular tools, so a bad link still leads somewhere useful.
+const SUGGESTED_IDS = ['bulk-audio-converter', 'bulk-video-compressor', 'vocal-remover', 'video-to-gif', 'ai-story-generator', 'word-counter'];
 
 export default function NotFound() {
-  const suggestions = SUGGESTED_IDS
-    .map((id) => toolsList.find((tool) => tool.id === id))
-    .filter(Boolean);
+  const suggestions = SUGGESTED_IDS.map((id) => toolsList.find((t) => t.id === id)).filter(Boolean);
 
   return (
-    <div className="min-h-screen pt-24 pb-20">
-      {/* Real 404s must never be indexed — this replaced a soft 404 that served Home. */}
+    <div className="mx-auto max-w-3xl space-y-10 px-4 pb-24 pt-16 sm:px-6">
+      {/* Real 404s must never be indexed. */}
       <Helmet>
         <title>Page Not Found (404) | AudioBulk</title>
         <meta name="robots" content="noindex, follow" />
-        <meta name="description" content="This AudioBulk page could not be found. Browse all 70 free browser-based audio, video, GIF and AI tools instead." />
+        <meta name="description" content={`This AudioBulk page could not be found. Browse all ${toolsList.length} free tools instead.`} />
       </Helmet>
 
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 text-center">
-        <p className="font-sora text-7xl md:text-8xl font-extrabold bg-gradient-to-r from-sky-400 to-indigo-500 bg-clip-text text-transparent">
-          404
-        </p>
-        <h1 className="mt-4 font-sora text-2xl md:text-3xl font-bold text-white">
-          This page doesn&apos;t exist
-        </h1>
-        <p className="mt-3 text-slate-400 font-inter">
-          The link may be broken or the tool may have been renamed. All 70 tools are still
-          one click away — and they all still run entirely in your browser.
-        </p>
-
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link
-            to="/"
-            className="rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 px-6 py-3 font-semibold text-white transition-transform hover:scale-[1.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
-          >
-            <i className="fa-solid fa-house mr-2" aria-hidden="true"></i>
-            Back to Home
-          </Link>
-          <Link
-            to="/all-tools"
-            className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 font-semibold text-white transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
-          >
-            <i className="fa-solid fa-grid-2 mr-2" aria-hidden="true"></i>
-            Browse all 70 tools
-          </Link>
-        </div>
-
-        <div className="mt-12 text-left">
-          <h2 className="font-sora text-lg font-semibold text-white mb-4 text-center">
-            Popular tools
-          </h2>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {suggestions.map((tool) => (
-              <li key={tool.path}>
-                <Link
-                  to={tool.path}
-                  className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-4 py-3 transition-colors hover:bg-white/[0.07] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
-                >
-                  <i className={`fa-solid ${tool.icon} text-sky-400`} aria-hidden="true"></i>
-                  <span className="font-inter text-sm text-slate-200">{tool.name}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+      <div className="space-y-4">
+        <p className="font-display text-6xl font-extrabold text-wine">404</p>
+        <h1 className="text-3xl font-extrabold sm:text-4xl">We can't find that page</h1>
+        <p className="text-lg text-muted">The link may be broken, or the page may have moved. All {toolsList.length} tools are still here.</p>
+        <div className="flex flex-wrap gap-3 pt-2">
+          <Link to="/" className="rounded-lg bg-wine px-5 py-2.5 font-semibold text-paper hover:bg-wine-deep">Go to the home page</Link>
+          <Link to="/all-tools" className="rounded-lg border border-line-strong bg-paper px-5 py-2.5 font-semibold hover:bg-sand">See all tools</Link>
         </div>
       </div>
+
+      <section className="space-y-4">
+        <h2 className="text-xl font-bold">Popular tools</h2>
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {suggestions.map((t) => (
+            <li key={t.id}>
+              <Link to={t.path} className="flex items-center gap-3 rounded-xl border border-line bg-paper px-4 py-3 hover:bg-sand/50">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-sand text-wine"><ToolIcon name={t.icon} size={17} /></span>
+                <span className="font-semibold">{t.name}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }
