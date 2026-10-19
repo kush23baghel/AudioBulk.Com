@@ -33,15 +33,15 @@ test('unknown routes render a real 404, not Home', async ({ page }) => {
 });
 
 test.describe('All Tools directory filtering', () => {
-  test('total tool count is 70', () => {
+  test('total tool count is 71', () => {
     const sum = Object.values(EXPECTED_COUNTS).reduce((a, b) => a + b, 0);
-    expect(sum).toBe(70);
-    expect(toolsList.length).toBe(70);
+    expect(sum).toBe(71);
+    expect(toolsList.length).toBe(71);
   });
 
-  test('unfiltered view reports all 70 tools', async ({ page }) => {
+  test('unfiltered view reports all 71 tools', async ({ page }) => {
     await page.goto('/all-tools');
-    await expect(page.getByText(/^70 tools/)).toBeVisible();
+    await expect(page.getByText(/^71 tools/)).toBeVisible();
   });
 
   for (const cat of toolCategories) {

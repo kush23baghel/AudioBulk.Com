@@ -1,55 +1,114 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import { readVideoInfo } from '../../lib/videoInfo';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips } from '../../ui/controls';
 
-const ASPECT_RATIOS = [
-  { label: '16:9 (Landscape)', w: 1920, h: 1080 },
-  { label: '9:16 (Portrait/Reels)', w: 1080, h: 1920 },
-  { label: '1:1 (Square)', w: 1080, h: 1080 },
-  { label: '4:3 (Classic)', w: 1440, h: 1080 },
-  { label: '4:5 (Instagram)', w: 1080, h: 1350 },
+const SHAPES = [
+  { value: '16:9', label: 'Wide (16:9)', hint: 'YouTube and TV', rw: 16, rh: 9 },
+  { value: '9:16', label: 'Vertical (9:16)', hint: 'Reels, TikTok, Shorts', rw: 9, rh: 16 },
+  { value: '1:1', label: 'Square (1:1)', hint: 'Feed posts', rw: 1, rh: 1 },
+  { value: '4:5', label: 'Portrait (4:5)', hint: 'Instagram feed', rw: 4, rh: 5 },
+  { value: '4:3', label: 'Classic (4:3)', hint: 'Older TV shape', rw: 4, rh: 3 },
 ];
 
+const KEEPS = [
+  { value: 'center', label: 'Center', hint: 'Keep the middle' },
+  { value: 'top', label: 'Top', hint: 'Keep the top' },
+  { value: 'bottom', label: 'Bottom', hint: 'Keep the bottom' },
+  { value: 'left', label: 'Left', hint: 'Keep the left side' },
+  { value: 'right', label: 'Right', hint: 'Keep the right side' },
+];
+
+const even = (n) => Math.max(2, Math.floor(n / 2) * 2);
+
+// Works out the crop box. Never scales: the picture is only cut, so it is never stretched or upscaled.
+const cropBox = (width, height, shape, keep) => {
+  const wide = width * shape.rh > height * shape.rw; // the video is wider than the target shape
+  let w = width;
+  let h = height;
+  if (wide) w = even((height * shape.rw) / shape.rh);
+  else h = even((width * shape.rh) / shape.rw);
+  w = Math.min(w, even(width));
+  h = Math.min(h, even(height));
+  let x = even((width - w) / 2);
+  let y = even((height - h) / 2);
+  let usedKeep = 'center';
+  if (wide) {
+    if (keep === 'left') { x = 0; usedKeep = 'left'; }
+    if (keep === 'right') { x = even(width - w); usedKeep = 'right'; }
+  } else {
+    if (keep === 'top') { y = 0; usedKeep = 'top'; }
+    if (keep === 'bottom') { y = even(height - h); usedKeep = 'bottom'; }
+  }
+  const nothing = w >= width - 1 && h >= height - 1;
+  return { w, h, x, y, wide, usedKeep, nothing };
+};
+
+const KEEP_WORDS = {
+  center: 'keeps the middle',
+  top: 'keeps the top',
+  bottom: 'keeps the bottom',
+  left: 'keeps the left side',
+  right: 'keeps the right side',
+};
+
 export default function VideoCropper() {
-  const [ratio, setRatio] = useState(ASPECT_RATIOS[0]);
-  const processor = useBulkProcessor();
+  const [shapeValue, setShapeValue] = useState('9:16');
+  const [keep, setKeep] = useState('center');
+  const shape = SHAPES.find((s) => s.value === shapeValue);
 
-  const processFile = async (file, onProgress) => {
+  const inspect = (info) => {
+    if (!info || !info.ok || !info.width || !info.height) return null;
+    const box = cropBox(info.width, info.height, shape, keep);
+    if (box.nothing) return { tone: 'warn', text: `This video is already ${shape.value}, so there is nothing to crop.` };
+    let text = `${info.width}×${info.height} → ${box.w}×${box.h} (${KEEP_WORDS[box.usedKeep]})`;
+    if (box.usedKeep === 'center' && keep !== 'center') {
+      text += `. This cut is ${box.wide ? 'sideways' : 'up and down'}, so only ${box.wide ? 'Left, Center or Right' : 'Top, Center or Bottom'} applies.`;
+    }
+    if ((info.duration && info.duration > 600) || info.width >= 3840) {
+      return { tone: 'warn', text: `${text}. This is a big video and may take a long time in the browser.` };
+    }
+    return { tone: 'info', text };
+  };
+
+  const processFile = async (file, onProgress, info) => {
+    if (!info || !info.ok || !info.width || !info.height) {
+      throw new Error('We could not read the size of this video. Try an MP4 or WebM file.');
+    }
+    const box = cropBox(info.width, info.height, shape, keep);
+    if (box.nothing) throw new Error(`This video is already ${shape.value}, so there is nothing to crop.`);
+
     const ffmpeg = await getFFmpeg();
-    const ext = file.name.split('.').pop();
-    const uid = Math.random().toString(36).substring(7);
-    const inputName = `input_${uid}.${ext}`;
-    const outputName = `output_cropped_${uid}.mp4`;
-
+    const id = Math.random().toString(36).slice(2, 9);
+    const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
+    const inputName = `input_${id}.${inputExt}`;
+    const outputName = `output_${id}.mp4`;
     let progressHandler = null;
+
     try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
+      progressHandler = ({ progress }) => onProgress(Math.min(100, Math.max(0, progress * 100)));
+      ffmpeg.on('progress', progressHandler);
 
-    const { w, h } = ratio;
+      // Only cuts the picture (no scaling). Sound is kept and saved as AAC.
+      await ffmpeg.exec([
+        '-i', inputName,
+        '-map', '0:v:0', '-map', '0:a?',
+        '-vf', `crop=${box.w}:${box.h}:${box.x}:${box.y}`,
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputName,
+      ]);
 
-    // Crop to center using crop filter
-    // First scale to cover the target size, then crop to exact size
-    const filter = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
-      progressHandler = ({ progress }) => onProgress(progress * 100);
-    ffmpeg.on('progress', progressHandler);
-
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-vf', filter,
-      '-c:v', 'libx264',
-      '-crf', '23',
-      '-preset', 'veryfast',
-      '-c:a', 'copy',
-      outputName
-    ]);
-
-    const data = await ffmpeg.readFile(outputName);
-    const blob = new Blob([data.buffer], { type: 'video/mp4' });
-    const baseName = file.name.replace(/\.[^.]+$/, '');
-    const ratioLabel = ratio.label.replace(/[^a-zA-Z0-9]/g, '_');
-    return { blob, name: `${baseName}_${ratioLabel}.mp4` };
+      const data = await ffmpeg.readFile(outputName);
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      return {
+        blob: new Blob([data.buffer], { type: 'video/mp4' }),
+        name: `${baseName}_${shape.value.replace(':', 'x')}.mp4`,
+      };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
@@ -57,50 +116,34 @@ export default function VideoCropper() {
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Target Aspect Ratio</label>
-        <div className="flex flex-col gap-1.5">
-          {ASPECT_RATIOS.map((r) => (
-            <button
-              key={r.label}
-              onClick={() => setRatio(r)}
-              className={`btn btn-xs justify-between px-3 py-2.5 h-auto text-xs font-medium rounded-xl border ${
-                ratio.label === r.label
-                  ? 'bg-sky-500 text-white border-sky-500'
-                  : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
-              }`}
-            >
-              <span>{r.label}</span>
-              <span className="text-[10px] opacity-60">{r.w}×{r.h}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="rounded-xl bg-sky-500/5 border border-sky-500/10 p-3">
-        <p className="text-[10px] text-sky-600 leading-normal">
-          Crops to the center of the video. Great for converting landscape footage to vertical Reels/TikTok format.
-        </p>
-      </div>
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="Video Cropper"
-      description="Crop aspect ratios (16:9 → 9:16 vertical for social clips). Center-crops your video to any standard aspect ratio."
-      icon="fa-crop"
-      categoryName="Video Tools"
-      categoryPath="/all-tools?cat=video"
-      acceptTypes={{ 'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mkv'] }}
-      optionsTitle="Crop Ratio"
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/video-cropper"
+      name="Video Cropper"
+      title="Cut your video to a new shape"
+      intro="Trim the edges of a video to wide, vertical, square or portrait. The picture is cut, not stretched, and never made bigger."
+      accept={{ 'video/*': ['.mp4', '.mov', '.webm', '.mkv', '.avi'] }}
+      dropHint="Videos like MP4, MOV and WebM."
+      readInfo={readVideoInfo}
+      processFile={processFile}
+      inspect={inspect}
+      verb={{ action: 'Crop videos', working: 'Cropping' }}
+      steps={[
+        {
+          label: 'Pick the new shape',
+          content: <ChoiceChips label="Shape" options={SHAPES} value={shapeValue} onChange={setShapeValue} />,
+        },
+        {
+          label: 'Pick which part to keep',
+          content: <ChoiceChips label="Keep" options={KEEPS} value={keep} onChange={setKeep} />,
+        },
+      ]}
       faqs={[
-        { q: 'What is center crop?', a: 'The tool scales the video to fill the target size and then trims the edges, keeping the center of the frame.' },
-        { q: 'Why convert to vertical?', a: 'Platforms like TikTok, Instagram Reels, and YouTube Shorts require 9:16 portrait video.' }
+        { q: 'Does this stretch or squash my video?', a: 'No. It cuts away the edges and keeps the rest exactly as it was. Nothing is stretched, and the video is never made bigger.' },
+        { q: 'Which part is kept?', a: 'You choose. Center keeps the middle. Left and Right are for cutting a wide video sideways. Top and Bottom are for cutting a tall video up and down.' },
+        { q: 'Why is my video a bit smaller than I expected?', a: 'The size is rounded down to an even number so every player can play it. That can make it one pixel narrower.' },
+        { q: 'Will the sound be kept?', a: 'Yes. If the video has sound, it is kept. The result is saved as an MP4.' },
+        { q: 'Does it get worse in quality?', a: 'The video is saved again after cropping, so there can be a very small loss. It stays sharp for normal use.' },
       ]}
     />
   );

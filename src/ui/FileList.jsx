@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { saveAs } from 'file-saver';
-import { Music, Film, Image, FileText, Download, X, LoaderCircle, CircleCheck, CircleAlert, Headphones, Info, TriangleAlert } from 'lucide-react';
+import { Music, Film, Image, FileText, Download, X, LoaderCircle, CircleCheck, CircleAlert, Headphones, Info, TriangleAlert, Eye } from 'lucide-react';
 import { describeAudio } from '../lib/audioInfo';
+import { describeVideo } from '../lib/videoInfo';
 import AudioPreview from './AudioPreview';
 
-const AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg|opus|flac|webm)$/i;
+// How a result can be previewed, from its file name.
+const PREVIEW = [
+  { kind: 'video', test: /\.(mp4|webm|mov|mkv|ogv|m4v)$/i, label: 'Watch', Icon: Eye },
+  { kind: 'image', test: /\.(png|jpe?g|webp|gif)$/i, label: 'View', Icon: Eye },
+  { kind: 'audio', test: /\.(mp3|wav|m4a|aac|ogg|opus|flac)$/i, label: 'Listen', Icon: Headphones },
+];
+const previewFor = (name) => PREVIEW.find((p) => p.test.test(name));
 
 function FileIcon({ file }) {
   const type = file?.type || '';
@@ -64,8 +71,9 @@ function FileNote({ note }) {
 
 function FileRow({ item, info, note, workingWord, onRemove, busy }) {
   const [listening, setListening] = useState(false);
-  const audioOut = item.outputs?.find((o) => AUDIO_EXT.test(o.name));
-  const facts = [formatSize(item.size), describeAudio(info)].filter(Boolean).join(' · ');
+  const previewOut = item.outputs?.find((o) => previewFor(o.name));
+  const preview = previewOut && previewFor(previewOut.name);
+  const facts = [formatSize(item.size), info?.isVideo ? describeVideo(info) : describeAudio(info)].filter(Boolean).join(' · ');
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sand text-wine">
@@ -84,7 +92,7 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
       </div>
       <div className="flex items-center gap-2">
         <StatusPill item={item} workingWord={workingWord} />
-        {audioOut && (
+        {preview && (
           <button
             type="button"
             onClick={() => setListening((l) => !l)}
@@ -93,7 +101,7 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
               listening ? 'border-wine bg-wine text-paper' : 'border-line-strong text-wine hover:bg-sand'
             }`}
           >
-            <Headphones size={14} aria-hidden="true" /> Listen
+            <preview.Icon size={14} aria-hidden="true" /> {preview.label}
           </button>
         )}
         {item.outputs?.map((out) => (
@@ -118,9 +126,19 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
           <X size={16} aria-hidden="true" />
         </button>
       </div>
-      {listening && audioOut && (
+      {listening && preview && (
         <div className="basis-full">
-          <AudioPreview url={audioOut.url} label={audioOut.name} />
+          {preview.kind === 'audio' && <AudioPreview url={previewOut.url} label={previewOut.name} />}
+          {preview.kind === 'video' && (
+            <video src={previewOut.url} controls playsInline className="max-h-80 w-full rounded-xl border border-line bg-ink" aria-label={`Preview of ${previewOut.name}`} />
+          )}
+          {preview.kind === 'image' && (
+            <div className="flex flex-wrap gap-2">
+              {item.outputs.filter((o) => previewFor(o.name)?.kind === 'image').slice(0, 12).map((o) => (
+                <img key={o.url} src={o.url} alt={o.name} className="h-28 rounded-lg border border-line object-contain" />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </li>

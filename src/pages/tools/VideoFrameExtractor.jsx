@@ -1,219 +1,156 @@
-import { useState, useRef, useEffect } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
-import { downloadFiles } from '../../lib/download';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import { formatDuration } from '../../lib/audioInfo';
+import { readVideoInfo } from '../../lib/videoInfo';
+import { grabFrames, convertImage } from '../../lib/videoFrames';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips } from '../../ui/controls';
+
+const MAX_FRAMES = 300;
+const EVEN_COUNT = 12;
+
+const SPACING = [
+  { value: '1', label: 'Every 1 second', hint: 'Lots of pictures' },
+  { value: '2', label: 'Every 2 seconds', hint: 'A good all-round choice' },
+  { value: '5', label: 'Every 5 seconds', hint: 'A few pictures' },
+  { value: '10', label: 'Every 10 seconds', hint: 'Only the key moments' },
+  { value: 'even', label: `${EVEN_COUNT} evenly spaced frames`, hint: 'The same number from every video, short or long' },
+];
+
+const FORMATS = [
+  { value: 'jpg', label: 'JPG (small)', hint: 'Small files, great for sharing' },
+  { value: 'png', label: 'PNG (perfect)', hint: 'No quality loss, much bigger files' },
+];
+
+// How many pictures this setting gives for a video of this length.
+const countFrames = (spacing, duration) => {
+  if (spacing === 'even') return EVEN_COUNT;
+  if (!duration) return null;
+  return Math.max(1, Math.ceil(duration / Number(spacing) - 1e-6));
+};
 
 export default function VideoFrameExtractor() {
-  const [interval, setIntervalVal] = useState(2); // 1 frame every X seconds
-  const [format, setFormat] = useState('jpg'); // jpg or png
-  const processor = useBulkProcessor();
-  const [outputImages, setOutputImages] = useState([]); // Array of { name, blob, url }
+  const [spacing, setSpacing] = useState('2');
+  const [format, setFormat] = useState('jpg');
 
-  // 1. Track object URLs
-  const objectURLsRef = useRef([]);
-
-  // 2. Cleanup function
-  const cleanupURLs = () => {
-    objectURLsRef.current.forEach(url => URL.revokeObjectURL(url));
-    objectURLsRef.current = [];
+  const inspect = (info) => {
+    if (!info || !info.ok) return null;
+    if (info.duration && info.duration > 600) {
+      return { tone: 'warn', text: 'This video is long, so it may take a while in the browser. A bigger gap between pictures will be faster.' };
+    }
+    const n = countFrames(spacing, info.duration);
+    if (n === null) return null;
+    if (n > MAX_FRAMES) {
+      return { tone: 'warn', text: `This would be ${n} pictures. We keep the first ${MAX_FRAMES} only. Pick a bigger gap to cover the whole video.` };
+    }
+    const where = info.duration
+      ? (spacing === 'even' ? ` spread across the ${formatDuration(info.duration)} video` : ` from the ${formatDuration(info.duration)} video`)
+      : '';
+    return { tone: 'info', text: `About ${n} picture${n === 1 ? '' : 's'}${where}.${n > 1 ? ' You get them in one .zip.' : ''}` };
   };
 
-  // Revoke on component unmount
-  useEffect(() => {
-    return cleanupURLs;
-  }, []);
+  const processFile = async (file, onProgress, info) => {
+    const duration = info && info.ok && info.duration ? info.duration : null;
+    const expected = countFrames(spacing, duration);
+    const limit = expected === null || expected > MAX_FRAMES ? MAX_FRAMES : expected;
+    const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+    const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
+    const named = (blobs) => blobs.map((blob, i) => ({ blob, name: `${baseName}_frame_${String(i + 1).padStart(3, '0')}.${format}` }));
 
-  const processFile = async (file, onProgress) => {
-    // Revoke before starting a new extraction
-    cleanupURLs();
+    // 1) The browser's own decoder: fast, exact times, no ffmpeg needed.
+    if (duration) {
+      const times = spacing === 'even'
+        ? Array.from({ length: EVEN_COUNT }, (_, i) => (duration * (i + 0.5)) / EVEN_COUNT)
+        : Array.from({ length: limit }, (_, i) => i * Number(spacing)).filter((t) => t < duration);
+      try {
+        const frames = named(await grabFrames(file, times, { type: mime, onProgress: (p) => onProgress(Math.min(99, p)) }));
+        onProgress(100);
+        return { blob: frames[0].blob, name: frames[0].name, extra: frames.slice(1) };
+      } catch {
+        // The browser can't play this format (e.g. some MKV/AVI). Fall back to ffmpeg below.
+      }
+    }
 
+    // 2) ffmpeg fallback. Always PNG: ffmpeg.wasm's JPG encoder crashes on many H.264 videos.
     const ffmpeg = await getFFmpeg();
+    const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'tmp';
-    const inputName = `input_${Math.random().toString(36).substring(7)}.${inputExt}`;
+    const inputName = `input_${id}.${inputExt}`;
+    const pattern = `frame_${id}_%03d.png`;
+    const frameName = (n) => `frame_${id}_${String(n).padStart(3, '0')}.png`;
 
     let progressHandler = null;
+    let logHandler = null;
+    let written = 0;
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+      // Some builds never send a progress event, so also count the "frame=" lines in the log.
       progressHandler = ({ progress }) => {
-        onProgress(progress * 100);
+        if (progress > 0 && progress <= 1) onProgress(Math.min(99, progress * 100));
+      };
+      logHandler = ({ message }) => {
+        const m = message.match(/frame=\s*(\d+)/);
+        if (m) {
+          written = Math.max(written, Number(m[1]));
+          onProgress(Math.min(99, (written / limit) * 100));
+        }
       };
       ffmpeg.on('progress', progressHandler);
+      ffmpeg.on('log', logHandler);
 
-      // Extract frames using the fps filter
-      const fpsFilter = `fps=1/${interval}`;
-      
-      // 3. Wrap extraction in try/finally
-      try {
-        await ffmpeg.exec([
-          '-i', inputName,
-          '-vf', fpsFilter,
-          `frame_%03d.${format}`
-        ]);
+      // -an -sn: ignore sound and subtitles. -frames:v: stop at the right count so ffmpeg never waits for more.
+      const filter = spacing === 'even' && duration ? `fps=${EVEN_COUNT}/${duration.toFixed(3)}` : `fps=1/${spacing === 'even' ? 5 : spacing}`;
+      await ffmpeg.exec(['-i', inputName, '-an', '-sn', '-vf', filter, '-frames:v', String(limit), '-c:v', 'png', pattern]);
 
-        // Read files sequentially until we get a read error (terminator)
-        let idx = 1;
-        const frames = [];
-        const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-
-        while (true) {
-          const frameFileName = `frame_${String(idx).padStart(3, '0')}.${format}`;
-          try {
-            const fileData = await ffmpeg.readFile(frameFileName);
-            const imageBlob = new Blob([fileData.buffer], { type: format === 'jpg' ? 'image/jpeg' : 'image/png' });
-            
-            const url = URL.createObjectURL(imageBlob);
-            objectURLsRef.current.push(url);
-
-            frames.push({
-              name: `${baseName}_frame_${idx}.${format}`,
-              blob: imageBlob,
-              url: url
-            });
-
-            idx++;
-          } catch {
-            // readFile failed - no more frames left
-            break;
-          }
-        }
-
-        // Update local display state
-        setOutputImages(frames);
-
-        // Wrap single frame or zip them up
-        if (frames.length === 1) {
-          return {
-            blob: frames[0].blob,
-            name: frames[0].name
-          };
-        } else if (frames.length > 1) {
-          return {
-            blob: frames[0].blob, // fallback
-            name: frames[0].name
-          };
-        }
-
-        throw new Error("No frames could be extracted from this video.");
-      } finally {
-        // Cleanup extracted frames dynamically written to WASM
-        let cleanupIdx = 1;
-        while (true) {
-          const frameFileName = `frame_${String(cleanupIdx).padStart(3, '0')}.${format}`;
-          try {
-            await ffmpeg.deleteFile(frameFileName);
-            cleanupIdx++;
-          } catch {
-            // No more files to delete
-            break;
-          }
-        }
+      const blobs = [];
+      for (let n = 1; n <= limit; n++) {
+        let data;
+        try { data = await ffmpeg.readFile(frameName(n)); } catch { break; }
+        blobs.push(await convertImage(new Blob([data.buffer], { type: 'image/png' }), mime));
       }
+      if (blobs.length === 0) throw new Error('No pictures could be taken from this video. Try a different video file.');
+      const frames = named(blobs);
+      onProgress(100);
+
+      return { blob: frames[0].blob, name: frames[0].name, extra: frames.slice(1) };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
+      if (logHandler) ffmpeg.off('log', logHandler);
       await safeDelete(ffmpeg, inputName);
+      for (let n = 1; n <= limit; n++) await safeDelete(ffmpeg, frameName(n));
     }
   };
 
-  const handleDownloadAllFrames = () => {
-    if (outputImages.length === 0) return;
-    const downloadList = outputImages.map(img => ({ name: img.name, blob: img.blob }));
-    downloadFiles(downloadList, 'extracted-frames.zip');
-  };
-
-  const optionsContent = (
-    <div className="space-y-4">
-      {/* Interval Setting */}
-      <div className="space-y-2">
-        <div className="flex justify-between text-xs font-semibold text-slate-300">
-          <span>Extract 1 Frame Every</span>
-          <span className="text-sky-600 font-bold">{interval}s</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="20"
-          value={interval}
-          onChange={(e) => setIntervalVal(parseInt(e.target.value))}
-          disabled={processor.isProcessing}
-          className="range range-sky range-xs bg-white/5 border border-white/10 p-1 rounded-lg"
-        />
-        <div className="flex justify-between text-[9px] text-slate-400 font-bold px-1">
-          <span>1s (Dense)</span>
-          <span>10s</span>
-          <span>20s (Sparse)</span>
-        </div>
-      </div>
-
-      {/* Output Format */}
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300">Image Output Format</label>
-        <div className="grid grid-cols-2 gap-2">
-          {['jpg', 'png'].map((fmt) => (
-            <button
-              key={fmt}
-              onClick={() => setFormat(fmt)}
-              disabled={processor.isProcessing}
-              className={`btn btn-xs uppercase font-bold py-2 h-auto rounded-xl border border-white/10 ${
-                format === fmt
-                  ? 'bg-sky-500 hover:bg-sky-600 text-slate-950 border-0'
-                  : 'bg-white/5 text-slate-300 hover:bg-white/10'
-              }`}
-            >
-              {fmt === 'jpg' ? 'JPEG (Small)' : 'PNG (Lossless)'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Extracted Display */}
-      {outputImages.length > 0 && (
-        <div className="border-t border-white/10 pt-4 space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-slate-300">
-              Extracted {outputImages.length} frames
-            </span>
-            <button
-              onClick={handleDownloadAllFrames}
-              className="btn btn-xs bg-emerald-500 hover:bg-emerald-600 text-slate-950 border-0 font-bold"
-            >
-              Zip & Download
-            </button>
-          </div>
-          <div data-lenis-prevent="true" className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto overscroll-contain p-1 bg-[#0b1426]/80 backdrop-blur-md shadow-inner rounded-xl border border-white/10">
-            {outputImages.map((img, index) => (
-              <a
-                key={index}
-                href={img.url}
-                download={img.name}
-                className="group relative aspect-video rounded-lg overflow-hidden border border-white/10"
-              >
-                <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <i className="fa-solid fa-arrow-down-long text-white text-xs"></i>
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="Video Frame Extractor"
-      description="Extract PNG or JPG image frames from video files at custom seconds-based intervals entirely client-side."
-      icon="fa-film"
-      categoryName="Video Tools"
-      categoryPath="/all-tools?cat=video"
-      acceptTypes={{ 'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mkv'] }}
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/video-frame-extractor"
+      name="Video Frame Extractor"
+      title="Save pictures from a video"
+      intro="Take still pictures out of your videos at the spacing you choose. Many pictures come together in one .zip."
+      accept={{ 'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mkv'] }}
+      dropHint="Video files like MP4, MOV and WebM."
+      readInfo={readVideoInfo}
+      processFile={processFile}
+      inspect={inspect}
+      verb={{ action: 'Take pictures', working: 'Taking pictures' }}
+      steps={[
+        {
+          label: 'Pick how often to take a picture',
+          content: <ChoiceChips label="Spacing" options={SPACING} value={spacing} onChange={setSpacing} />,
+        },
+        {
+          label: 'Pick the picture type',
+          content: <ChoiceChips label="Picture type" options={FORMATS} value={format} onChange={setFormat} />,
+        },
+      ]}
       faqs={[
-        { q: "How is this processed?", a: "FFmpeg.wasm runs in your browser, reading the video and generating frames. Because it is done client-side, it's 100% private and offline." }
+        { q: 'Are my videos uploaded anywhere?', a: 'No. Everything happens inside your web browser, on your own computer. Your videos never leave your device.' },
+        { q: 'Which type should I pick?', a: 'JPG makes small files that look great for almost everything. Pick PNG if you need every pixel exactly as in the video. PNG files are much bigger.' },
+        { q: 'How many pictures can I get?', a: `Up to ${MAX_FRAMES} pictures per video. For a long video, pick a bigger gap or the evenly spaced choice so the pictures cover the whole video.` },
+        { q: 'Are the pictures as sharp as the video?', a: 'They have the same size as the video. A picture cannot be sharper than the video it comes from.' },
+        { q: 'Why is a long video slow?', a: 'Your browser does the work, which is slower than a desktop app. Large or long videos can take a few minutes.' },
       ]}
     />
   );

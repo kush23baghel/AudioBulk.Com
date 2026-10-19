@@ -121,6 +121,72 @@ export const toolGuides = {
     ],
     next: ['audio-equalizer', 'bulk-audio-volume', 'bulk-audio-converter'],
   },
+  'bulk-video-converter': {
+    tips: [
+      'MP4 plays on almost every phone, computer and website. Pick it if you are not sure.',
+      'If a video is already MP4, it is copied without any loss.',
+      'WebM is great for putting videos on your own website.',
+    ],
+    next: ['bulk-video-compressor', 'video-trimmer', 'video-resizer'],
+  },
+  'bulk-video-compressor': {
+    tips: [
+      '"Balanced" keeps videos looking good at a much smaller size.',
+      'Making the picture smaller (720p or 480p) saves the most space.',
+      'Compressing a video that was already compressed loses a little quality each time.',
+    ],
+    next: ['video-trimmer', 'video-resizer', 'video-to-gif'],
+  },
+  'video-trimmer': {
+    tips: [
+      'Play the video, pause where you want to start, and press "Set start here".',
+      '"Exact cut" starts on the exact frame. "Fast cut" keeps full quality but may start a moment early.',
+    ],
+    next: ['bulk-video-compressor', 'video-to-gif', 'video-muter'],
+  },
+  'video-cropper': {
+    tips: [
+      '9:16 is the shape for TikTok, Reels and Shorts.',
+      'Cropping cuts away the edges; it never stretches the picture.',
+    ],
+    next: ['video-resizer', 'bulk-video-compressor', 'video-trimmer'],
+  },
+  'video-resizer': {
+    tips: [
+      '720p is sharp enough for most phones and much smaller than 1080p.',
+      'Making a small video bigger does not add detail.',
+    ],
+    next: ['bulk-video-compressor', 'video-cropper', 'video-trimmer'],
+  },
+  'video-muter': {
+    tips: [
+      'The picture is copied without any loss, so this is quick.',
+      'Want the sound as a file instead? Use Video to Audio.',
+    ],
+    next: ['bulk-video-to-audio', 'bulk-video-compressor', 'video-to-gif'],
+  },
+  'video-frame-extractor': {
+    tips: [
+      'PNG keeps every detail; JPG makes much smaller files.',
+      'Many pictures come back together in one .zip.',
+    ],
+    next: ['first-last-frame-extractor', 'gif-maker', 'image-splitter'],
+  },
+  'first-last-frame-extractor': {
+    tips: [
+      'The first frame often makes a good thumbnail.',
+      'Add many videos at once to get all their thumbnails in one go.',
+    ],
+    next: ['video-frame-extractor', 'image-hue-adjuster', 'video-trimmer'],
+  },
+  'watermark-remover': {
+    tips: [
+      'Draw the box a little bigger than the logo for the cleanest result.',
+      'It hides the logo; it cannot bring back what was underneath.',
+      'Only remove watermarks from videos you have the right to use.',
+    ],
+    next: ['video-cropper', 'bulk-video-compressor', 'video-trimmer'],
+  },
   'text-to-speech': {
     tips: [
       'The voices come from your device, so they differ between computers and phones.',

@@ -41,8 +41,10 @@ export default function BulkTool({
   verb = { action: 'Convert', working: 'Converting' },
   faqs = [],
   // Optional check run on each file's details before processing, using the current settings:
-  // (info, file) => ({ tone: 'warn' | 'info', text }) | null. info comes from src/lib/audioInfo.js.
+  // (info, file) => ({ tone: 'warn' | 'info', text }) | null. info comes from readInfo below.
   inspect,
+  // How to read a file's details: readAudioInfo (default) or readVideoInfo from src/lib/videoInfo.js.
+  readInfo = readAudioInfo,
 }) {
   const { queue, isProcessing, addFiles, removeFile, clearQueue, processQueue } = useBulkProcessor();
 
@@ -53,11 +55,11 @@ export default function BulkTool({
   useEffect(() => {
     queue.filter((item) => item.file && !started.current.has(item.id)).forEach(async (item) => {
       started.current.add(item.id);
-      const info = await readAudioInfo(item.file);
+      const info = await readInfo(item.file);
       infoByFile.current.set(item.file, info);
       setInfos((prev) => ({ ...prev, [item.id]: info }));
     });
-  }, [queue]);
+  }, [queue, readInfo]);
 
   const notes = {};
   if (inspect) {

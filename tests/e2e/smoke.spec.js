@@ -2,12 +2,12 @@ import { test, expect } from '@playwright/test';
 import { toolsList, collectPageErrors } from './helpers.js';
 
 // Data-driven sweep over every tool in the single source of truth (src/data/tools.js).
-// Adding a tool there automatically adds a test here. Guarantees each of the 70 tool
+// Adding a tool there automatically adds a test here. Guarantees each of the 71 tool
 // routes mounts, renders a heading, and throws no uncaught/console errors on load.
 
 test.describe('All tool pages load without errors', () => {
   test('tool inventory matches expected count', () => {
-    expect(toolsList.length).toBe(70);
+    expect(toolsList.length).toBe(71);
   });
 
   for (const tool of toolsList) {

@@ -20,6 +20,7 @@ const VideoTrimmer = lazy(() => import('./pages/tools/VideoTrimmer'));
 const VideoCropper = lazy(() => import('./pages/tools/VideoCropper'));
 const VideoResizer = lazy(() => import('./pages/tools/VideoResizer'));
 const VideoMuter = lazy(() => import('./pages/tools/VideoMuter'));
+const WatermarkRemover = lazy(() => import('./pages/tools/WatermarkRemover'));
 
 const VideoToGif = lazy(() => import('./pages/tools/VideoToGif'));
 const GifToVideo = lazy(() => import('./pages/tools/GifToVideo'));
@@ -106,6 +107,16 @@ export default function App() {
           <Route path="tools/audio-equalizer" element={<AudioEqualizer />} />
           <Route path="tools/voice-recorder" element={<VoiceRecorder />} />
           <Route path="tools/text-to-speech" element={<TextToSpeech />} />
+          {/* Video tools */}
+          <Route path="tools/bulk-video-converter" element={<BulkVideoConverter />} />
+          <Route path="tools/bulk-video-compressor" element={<BulkVideoCompressor />} />
+          <Route path="tools/video-trimmer" element={<VideoTrimmer />} />
+          <Route path="tools/video-cropper" element={<VideoCropper />} />
+          <Route path="tools/video-resizer" element={<VideoResizer />} />
+          <Route path="tools/video-muter" element={<VideoMuter />} />
+          <Route path="tools/video-frame-extractor" element={<VideoFrameExtractor />} />
+          <Route path="tools/first-last-frame-extractor" element={<FirstLastFrameExtractor />} />
+          <Route path="tools/watermark-remover" element={<WatermarkRemover />} />
           {/* Real 404 (noindex) instead of silently serving Home at every unknown URL */}
           <Route path="*" element={<NotFound />} />
         </Route>
@@ -113,8 +124,6 @@ export default function App() {
         <Route path="/" element={<Layout />}>
           
           {/* Phase 1 Tools */}
-          <Route path="tools/bulk-video-compressor" element={<BulkVideoCompressor />} />
-          <Route path="tools/video-frame-extractor" element={<VideoFrameExtractor />} />
 
           {/* Phase 2 Tools */}
           <Route path="tools/word-counter" element={<WordCounter />} />
@@ -122,12 +131,6 @@ export default function App() {
           <Route path="tools/fb-ad-cost" element={<AdCostCalculator />} />
           
           {/* Generated Routes */}
-          <Route path="tools/first-last-frame-extractor" element={<FirstLastFrameExtractor />} />
-          <Route path="tools/bulk-video-converter" element={<BulkVideoConverter />} />
-          <Route path="tools/video-trimmer" element={<VideoTrimmer />} />
-          <Route path="tools/video-cropper" element={<VideoCropper />} />
-          <Route path="tools/video-resizer" element={<VideoResizer />} />
-          <Route path="tools/video-muter" element={<VideoMuter />} />
 
           <Route path="tools/video-to-gif" element={<VideoToGif />} />
           <Route path="tools/gif-to-video" element={<GifToVideo />} />

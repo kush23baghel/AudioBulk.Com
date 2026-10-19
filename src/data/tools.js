@@ -63,6 +63,7 @@ export const toolsList = [
   { id: "video-cropper", categoryId: "video", name: "Video Cropper", desc: "Cut the edges off a video, for example to make it vertical for phones.", icon: "fa-crop", path: "/tools/video-cropper" },
   { id: "video-resizer", categoryId: "video", name: "Video Resizer", desc: "Change a video's size, like 1080p or 720p.", icon: "fa-expand-arrows-alt", path: "/tools/video-resizer" },
   { id: "video-muter", categoryId: "video", name: "Video Muter", desc: "Remove the sound from videos.", icon: "fa-volume-xmark", path: "/tools/video-muter" },
+  { id: "watermark-remover", categoryId: "video", name: "Watermark Remover", desc: "Hide a logo or watermark in a video by blurring or filling the spot.", icon: "fa-eraser", path: "/tools/watermark-remover" },
 
   // GIF & IMAGE
   { id: "video-to-gif", categoryId: "gif-image", name: "Video to GIF", desc: "Turn a video clip into an animated GIF.", icon: "fa-exchange-alt", path: "/tools/video-to-gif" },

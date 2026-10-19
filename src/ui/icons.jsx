@@ -2,7 +2,7 @@
 // so pages can show tool icons without the FontAwesome CDN.
 import {
   ArrowLeftRight, BookOpen, Bot, Calculator, Castle, ChartLine, CircleQuestionMark, Code, Coins, Compass, Copy, Crop,
-  Earth, Expand, Feather, FileArchive, FileMusic, FileText, Film, FingerprintPattern, Gauge, Gem, Globe, Grid2x2, Hash,
+  Earth, Eraser, Expand, Feather, FileArchive, FileMusic, FileText, Film, FingerprintPattern, Gauge, Gem, Globe, Grid2x2, Hash,
   Heart, Image, Images, KeyRound, Lightbulb, ListOrdered, MailOpen, Megaphone, MessageSquarePlus, MessagesSquare, Mic,
   MicOff, Minimize2, Music, Palette, PencilLine, PenTool, Percent, Pipette, RefreshCw, Scale, Scissors, Scroll, Shirt,
   Shrink, Signature, SlidersHorizontal, Smile, SpellCheck, SquarePen, SquarePlus, Swords, Tags, TextAlignStart, Tv,
@@ -28,6 +28,7 @@ const ICONS = {
   'fa-crop': Crop,
   'fa-dragon': Swords,
   'fa-earth-americas': Earth,
+  'fa-eraser': Eraser,
   'fa-envelope-open-text': MailOpen,
   'fa-exchange-alt': ArrowLeftRight,
   'fa-expand-arrows-alt': Expand,
