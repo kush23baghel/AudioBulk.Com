@@ -28,27 +28,34 @@
   --font-body: 'Figtree', 'Segoe UI', system-ui, sans-serif;
 }
 
-/* The redesigned shell. Scoped so the old dark pages are untouched until approval. */
-.ab-shell {
-  color-scheme: light;
-  background: var(--color-cream);
-  color: var(--color-ink);
-  font-family: var(--font-body);
-  font-size: 16px;
-  line-height: 1.6;
-}
+/* The redesigned shell. Scoped so the old dark pages are untouched until approval.
+   In the base layer so Tailwind utilities on an element (e.g. outline-none) still win. */
+@layer base {
+  .ab-shell {
+    color-scheme: light;
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+  }
 
-.ab-shell h1,
-.ab-shell h2,
-.ab-shell h3 {
-  font-family: var(--font-display);
-  letter-spacing: -0.015em;
-  text-wrap: balance;
-}
+  .ab-shell h1,
+  .ab-shell h2,
+  .ab-shell h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
 
-.ab-shell :focus-visible {
-  outline: 3px solid var(--color-wine);
-  outline-offset: 2px;
+  .ab-shell :focus-visible {
+    outline: 3px solid var(--color-wine);
+    outline-offset: 2px;
+  }
+
+  .ab-shell input[type='search']::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
 }
 
 /* Quality slider: native range input, restyled. */

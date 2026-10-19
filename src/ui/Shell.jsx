@@ -2,9 +2,14 @@
 import { Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import { Menu, X, LoaderCircle } from 'lucide-react';
+import { Menu, X, LoaderCircle, Search, Settings } from 'lucide-react';
 import { toolsList, toolCategories } from '../data/tools';
 import useRecentTools from '../hooks/useRecentTools';
+import SearchDialog from './SearchDialog';
+import SettingsDialog from './SettingsDialog';
+
+const openSearch = () => window.dispatchEvent(new Event('open-command-palette'));
+const openSettings = () => window.dispatchEvent(new Event('open-ai-settings'));
 
 const NAV = [
   { label: 'Audio', to: '/all-tools?cat=audio' },
@@ -46,7 +51,7 @@ export default function Shell() {
       <header className="sticky top-0 z-30 border-b border-line bg-cream/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-4 sm:px-6">
           <Logo />
-          <nav aria-label="Main" className="hidden md:block">
+          <nav aria-label="Main" className="hidden lg:block">
             <ul className="flex items-center gap-1">
               {NAV.map((n) => (
                 <li key={n.label}>
@@ -57,19 +62,34 @@ export default function Shell() {
               ))}
             </ul>
           </nav>
-          <button
-            type="button"
-            className="rounded-lg p-2 text-ink hover:bg-sand md:hidden"
-            aria-expanded={menuOpen}
-            aria-controls="mobile-nav"
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            {menuOpen ? <X size={22} /> : <Menu size={22} />}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={openSearch}
+              className="flex items-center gap-2 rounded-lg border border-line bg-paper px-3 py-1.5 text-[15px] text-muted hover:border-line-strong hover:text-ink"
+            >
+              <Search size={17} aria-hidden="true" />
+              <span className="hidden sm:inline">Search</span>
+              <kbd className="hidden rounded border border-line px-1.5 text-xs lg:inline">Ctrl K</kbd>
+              <span className="sr-only sm:hidden">Search tools</span>
+            </button>
+            <button type="button" onClick={openSettings} className="rounded-lg p-2 text-muted hover:bg-sand hover:text-ink" aria-label="AI settings" title="AI settings">
+              <Settings size={20} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="rounded-lg p-2 text-ink hover:bg-sand lg:hidden"
+              aria-expanded={menuOpen}
+              aria-controls="mobile-nav"
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              {menuOpen ? <X size={22} /> : <Menu size={22} />}
+            </button>
+          </div>
         </div>
         {menuOpen && (
-          <nav id="mobile-nav" aria-label="Main" className="border-t border-line md:hidden">
+          <nav id="mobile-nav" aria-label="Main" className="border-t border-line lg:hidden">
             <ul className="mx-auto max-w-6xl space-y-1 px-4 py-3">
               {NAV.map((n) => (
                 <li key={n.label}>
@@ -85,7 +105,7 @@ export default function Shell() {
         <Suspense
           fallback={
             <div className="flex min-h-[50vh] items-center justify-center gap-2 text-muted">
-              <LoaderCircle className="animate-spin text-wine" size={20} aria-hidden="true" /> Loading the tool…
+              <LoaderCircle className="animate-spin text-wine" size={20} aria-hidden="true" /> Loading the toolâ€¦
             </div>
           }
         >
@@ -108,6 +128,8 @@ export default function Shell() {
         </div>
       </footer>
 
+      <SearchDialog />
+      <SettingsDialog />
       <Toaster
         position="bottom-right"
         toastOptions={{ style: { background: 'var(--color-paper)', border: '1px solid var(--color-line)', color: 'var(--color-ink)', fontFamily: 'var(--font-body)' } }}

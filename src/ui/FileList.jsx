@@ -1,5 +1,14 @@
 import { saveAs } from 'file-saver';
-import { Music, Download, X, LoaderCircle, CircleCheck, CircleAlert } from 'lucide-react';
+import { Music, Film, Image, FileText, Download, X, LoaderCircle, CircleCheck, CircleAlert } from 'lucide-react';
+
+function FileIcon({ file }) {
+  const type = file?.type || '';
+  const props = { size: 17, 'aria-hidden': true };
+  if (type.startsWith('video/')) return <Film {...props} />;
+  if (type.startsWith('image/')) return <Image {...props} />;
+  if (type.startsWith('audio/')) return <Music {...props} />;
+  return <FileText {...props} />;
+}
 
 function formatSize(bytes) {
   if (!bytes) return '0 KB';
@@ -40,7 +49,7 @@ function FileRow({ item, workingWord, onRemove, busy }) {
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sand text-wine">
-        <Music size={17} aria-hidden="true" />
+        <FileIcon file={item.file} />
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium" title={item.name}>{item.name}</p>
