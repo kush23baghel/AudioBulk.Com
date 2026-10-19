@@ -7,10 +7,11 @@ import { MotionConfig } from 'framer-motion';
 import Lenis from 'lenis';
 import 'lenis/dist/lenis.css';
 import { Toaster } from 'sonner';
-import { Menu, X, LoaderCircle, Search, Settings } from 'lucide-react';
+import { Menu, X, LoaderCircle, Search, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { toolsList, toolCategories } from '../data/tools';
 import useRecentTools from '../hooks/useRecentTools';
 import useMediaQuery from '../hooks/useMediaQuery';
+import { createLocalStore, useStore } from '../lib/localStore';
 import SearchDialog from './SearchDialog';
 import SettingsDialog from './SettingsDialog';
 import LeftNav from './LeftNav';
@@ -18,6 +19,25 @@ import RightRail from './RightRail';
 
 const openSearch = () => window.dispatchEvent(new Event('open-command-palette'));
 const openSettings = () => window.dispatchEvent(new Event('open-ai-settings'));
+
+// Desktop left sidebar shown or hidden; remembered in this browser.
+const sidebarStore = createLocalStore('audiobulk_sidebar_open', true, (v) => typeof v === 'boolean');
+const toggleSidebar = () => sidebarStore.set((open) => !open);
+
+// Ctrl/⌘ + B hides or shows the sidebar, except while typing in a field.
+function useSidebarShortcut() {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'b') return;
+      const el = document.activeElement;
+      if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
+      e.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+}
 
 function Logo() {
   return (
@@ -74,6 +94,8 @@ export default function Shell() {
   const { addRecentTool } = useRecentTools();
   const lenisRef = useSmoothScroll();
   const wide = useMediaQuery('(min-width: 1280px)');
+  const sidebarOpen = useStore(sidebarStore);
+  useSidebarShortcut();
 
   useEffect(() => {
     if (lenisRef.current) lenisRef.current.scrollTo(0, { immediate: true });
@@ -91,17 +113,32 @@ export default function Shell() {
         {/* Solid background on purpose: a blurred see-through header is costly to repaint while scrolling. */}
         <header className="sticky top-0 z-30 border-b border-line bg-cream">
           <div className="flex h-16 items-center gap-3 px-4 sm:px-5">
-            <button
-              type="button"
-              className="-ml-1 rounded-lg p-2 text-ink hover:bg-sand lg:hidden"
-              aria-expanded={menuOpen}
-              aria-controls="mobile-nav"
-              aria-label="Open menu"
-              onClick={() => setMenuOpen(true)}
-            >
-              <Menu size={22} />
-            </button>
-            <div className="shrink-0 lg:w-[248px]"><Logo /></div>
+            <div className="flex shrink-0 items-center gap-2 lg:w-[248px]">
+              {/* Phones and tablets: three-line menu opens the sidebar as a slide-in panel. */}
+              <button
+                type="button"
+                className="-ml-1 rounded-lg p-2 text-ink transition-colors duration-200 hover:bg-sand hover:text-wine lg:hidden"
+                aria-expanded={menuOpen}
+                aria-controls="mobile-nav"
+                aria-label="Open menu"
+                onClick={() => setMenuOpen(true)}
+              >
+                <Menu size={22} aria-hidden="true" />
+              </button>
+              {/* Desktop: show or hide the left sidebar. */}
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                aria-expanded={sidebarOpen}
+                aria-controls="left-sidebar"
+                aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+                title={`${sidebarOpen ? 'Hide' : 'Show'} sidebar (Ctrl+B)`}
+                className="-ml-1 hidden rounded-lg p-2 text-muted transition-colors duration-200 hover:bg-sand hover:text-wine lg:block"
+              >
+                {sidebarOpen ? <PanelLeftClose size={20} aria-hidden="true" /> : <PanelLeftOpen size={20} aria-hidden="true" />}
+              </button>
+              <Logo />
+            </div>
             <button
               type="button"
               onClick={openSearch}
@@ -124,13 +161,24 @@ export default function Shell() {
           </div>
         </header>
 
-        <div className="flex-1 lg:grid lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_320px]">
+        {/* The sidebar column slides between 264px and 0 when toggled (grid columns animate). */}
+        <div
+          className={`flex-1 transition-[grid-template-columns] duration-300 ease-out-soft motion-reduce:transition-none lg:grid ${
+            sidebarOpen
+              ? 'lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_320px]'
+              : 'lg:grid-cols-[0px_minmax(0,1fr)] xl:grid-cols-[0px_minmax(0,1fr)_320px]'
+          }`}
+        >
           <aside
+            id="left-sidebar"
             aria-label="Tools"
             data-lenis-prevent=""
-            className="sticky top-16 hidden h-[calc(100vh-4rem)] overflow-y-auto border-r border-line lg:block"
+            inert={!sidebarOpen}
+            className={`sticky top-16 hidden h-[calc(100vh-4rem)] overflow-x-hidden overflow-y-auto lg:block ${
+              sidebarOpen ? 'border-r border-line' : ''
+            }`}
           >
-            <LeftNav />
+            <div className="w-[264px]"><LeftNav /></div>
           </aside>
 
           {/* @container: page grids respond to the space between the sidebars, not the whole screen. */}
