@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Search, ArrowRight, Lock, Ban, UserRoundX, Check } from 'lucide-react';
 import { toolCategories, toolsList } from '../data/tools';
-import useRecentTools from '../hooks/useRecentTools';
 import SeoMeta from '../components/SeoMeta';
 import { Card } from '../ui/controls';
 import { ToolCard, CategoryCard } from '../ui/ToolCard';
@@ -27,11 +26,11 @@ const EASE = [0.22, 1, 0.36, 1];
 const byId = (id) => toolsList.find((t) => t.id === id);
 const openSearch = () => window.dispatchEvent(new Event('open-command-palette'));
 
-// A full-width band in the deeper cream, so card grids stand out from the page.
+// A rounded panel in the deeper cream, so card grids stand out without full-width stripes.
 function Band({ children }) {
   return (
-    <div className="border-y border-line bg-sunken">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">{children}</div>
+    <div className="mx-auto max-w-[100rem] px-4 sm:px-6">
+      <div className="rounded-3xl bg-sunken px-5 py-10 sm:px-8">{children}</div>
     </div>
   );
 }
@@ -103,8 +102,6 @@ function ToolPreview() {
 }
 
 export default function Home() {
-  const { recentTools } = useRecentTools();
-  const recent = recentTools.map((r) => toolsList.find((t) => t.path === r.path)).filter(Boolean);
   const total = toolsList.length;
 
   return (
@@ -112,14 +109,14 @@ export default function Home() {
       <SeoMeta />
 
       {/* Hero */}
-      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-16 pt-12 sm:px-6 sm:pt-16 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      <section className="mx-auto grid max-w-[100rem] items-center gap-10 px-4 pb-12 pt-10 sm:px-6 sm:pt-14 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <motion.div
           className="space-y-6"
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, ease: EASE }}
         >
-          <h1 className="text-4xl font-extrabold leading-[1.08] sm:text-5xl lg:text-[3.6rem]">
+          <h1 className="text-4xl font-extrabold leading-[1.08] @2xl:text-5xl @5xl:text-[3.6rem]">
             Free tools for audio, video, GIFs and <span className="text-wine">writing.</span>
           </h1>
           <p className="max-w-xl text-lg text-muted sm:text-xl">
@@ -155,24 +152,14 @@ export default function Home() {
         <ToolPreview />
       </section>
 
-      {/* Recently used */}
-      {recent.length > 0 && (
-        <section className="mx-auto max-w-6xl space-y-4 px-4 pb-16 sm:px-6" aria-labelledby="recent-title">
-          <h2 id="recent-title" className="text-2xl font-bold">Recently used</h2>
-          <StaggerList className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {recent.slice(0, 6).map((t) => <StaggerItem key={t.id}><ToolCard tool={t} /></StaggerItem>)}
-          </StaggerList>
-        </section>
-      )}
-
-      {/* Categories */}
+      {/* Categories (recently used and favorites live in the right sidebar) */}
       <Band>
         <section className="space-y-6" aria-labelledby="types-title">
           <Reveal className="space-y-2">
             <h2 id="types-title" className="text-3xl font-bold">Browse by type</h2>
             <p className="text-lg text-muted">Pick what you're working with.</p>
           </Reveal>
-          <StaggerList className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StaggerList className="grid gap-4 @xl:grid-cols-2 @4xl:grid-cols-3">
             {toolCategories.map((cat) => (
               <StaggerItem key={cat.id}>
                 <CategoryCard category={cat} count={toolsList.filter((t) => t.categoryId === cat.id).length} />
@@ -183,14 +170,14 @@ export default function Home() {
       </Band>
 
       {/* Popular */}
-      <section className="mx-auto max-w-6xl space-y-6 px-4 py-16 sm:px-6" aria-labelledby="popular-title">
+      <section className="mx-auto max-w-[100rem] space-y-6 px-4 py-14 sm:px-6" aria-labelledby="popular-title">
         <Reveal className="flex flex-wrap items-end justify-between gap-3">
           <h2 id="popular-title" className="text-3xl font-bold">Most popular</h2>
           <Link to="/all-tools" viewTransition className="group inline-flex items-center gap-1 font-semibold text-wine">
             See all {total} tools <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" aria-hidden="true" />
           </Link>
         </Reveal>
-        <StaggerList className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerList className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4">
           {POPULAR.map(byId).filter(Boolean).map((t) => <StaggerItem key={t.id}><ToolCard tool={t} /></StaggerItem>)}
         </StaggerList>
       </section>
@@ -199,7 +186,7 @@ export default function Home() {
       <Band>
         <section className="space-y-6" aria-labelledby="how-title">
           <Reveal><h2 id="how-title" className="text-3xl font-bold">How it works</h2></Reveal>
-          <StaggerList className="grid gap-4 md:grid-cols-3">
+          <StaggerList className="grid gap-4 @3xl:grid-cols-3">
             {[
               ['Pick a tool and your settings', 'Choose what you want, like MP3 at good quality. Everything is explained in plain words.'],
               ['Add your files', 'Drop in one file or a hundred. They are processed on your own computer, one after another.'],
@@ -215,14 +202,14 @@ export default function Home() {
         </section>
       </Band>
 
-      <div className="mx-auto max-w-6xl space-y-16 px-4 py-16 pb-24 sm:px-6">
+      <div className="mx-auto max-w-[100rem] space-y-12 px-4 pb-16 pt-14 sm:px-6">
         {/* Promise */}
         <Reveal as="section" aria-labelledby="promise-title" className="rounded-2xl bg-wine px-6 py-10 text-paper sm:px-10">
           <h2 id="promise-title" className="max-w-2xl text-3xl font-bold">No ads. Ever.</h2>
           <p className="mt-3 max-w-2xl text-lg text-paper/85">
             Many free tool sites load hundreds of ads and trackers on every page. AudioBulk loads none, because your own computer does the work and we have no servers to pay for.
           </p>
-          <ul className="mt-8 grid gap-6 sm:grid-cols-3">
+          <ul className="mt-8 grid gap-6 @2xl:grid-cols-3">
             {[
               [Lock, 'Nothing is uploaded', 'Your files stay on your computer from start to finish.'],
               [Ban, 'No ads or trackers', 'Just the tool you came for.'],

@@ -1,34 +1,16 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { createLocalStore, useStore } from '../lib/localStore';
 
-const RECENT_TOOLS_KEY = 'audiobulk_recent_tools';
 const MAX_RECENT = 6;
 
+// Shared by every component, so the sidebars update the moment a tool is opened.
+const recentStore = createLocalStore('audiobulk_recent_tools', [], Array.isArray);
+
 export default function useRecentTools() {
-  // Read once during initialisation instead of in a mount effect: no extra render,
-  // and no flash of an empty "Recently Used" row on load.
-  const [recentTools, setRecentTools] = useState(() => {
-    try {
-      const stored = localStorage.getItem(RECENT_TOOLS_KEY);
-      const parsed = stored ? JSON.parse(stored) : null;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      console.error('Failed to load recent tools:', e);
-      return [];
-    }
-  });
+  const recentTools = useStore(recentStore);
 
   const addRecentTool = useCallback((tool) => {
-    setRecentTools(prev => {
-      // Remove if already exists to move it to front
-      const filtered = prev.filter(t => t.path !== tool.path);
-      const updated = [tool, ...filtered].slice(0, MAX_RECENT);
-      try {
-        localStorage.setItem(RECENT_TOOLS_KEY, JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to save recent tools:', e);
-      }
-      return updated;
-    });
+    recentStore.set((prev) => [tool, ...prev.filter((t) => t.path !== tool.path)].slice(0, MAX_RECENT));
   }, []);
 
   return { recentTools, addRecentTool };

@@ -14,7 +14,7 @@ const EASE = [0.22, 1, 0.36, 1];
 // Cards glide into their new places when the filter changes; removed cards fade out.
 function ToolGrid({ tools }) {
   return (
-    <motion.ul layout className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <motion.ul layout className="grid gap-3 @xl:grid-cols-2 @5xl:grid-cols-3 @[96rem]:grid-cols-4">
       <AnimatePresence initial={false} mode="popLayout">
         {tools.map((t) => (
           <motion.li
@@ -56,7 +56,7 @@ export default function AllTools() {
     <>
       <SeoMeta title={category ? category.title : 'All tools'} description={category?.description} />
 
-      <div className="mx-auto max-w-6xl space-y-6 px-4 pb-10 pt-10 sm:px-6">
+      <div className="mx-auto max-w-[100rem] space-y-6 px-4 pb-10 pt-10 sm:px-6">
         <header className="space-y-3">
           <h1 className="text-4xl font-extrabold">{category ? category.title : 'All tools'}</h1>
           <p className="text-lg text-muted">{tools.length} tools · free, no ads, nothing uploaded</p>
@@ -98,8 +98,8 @@ export default function AllTools() {
         </div>
       </div>
 
-      <div className="border-t border-line bg-sunken">
-        <div className="mx-auto max-w-6xl px-4 pb-24 pt-10 sm:px-6">
+      <div className="mx-auto max-w-[100rem] px-4 pb-14 sm:px-6">
+        <div className="rounded-3xl bg-sunken p-4 sm:p-6">
           {tools.length === 0 ? (
             <div className="space-y-4 rounded-2xl border border-line bg-paper p-10 text-center">
               <p className="text-lg">No tools match “{query}”{category ? ` in ${category.title.toLowerCase()}` : ''}.</p>

@@ -59,7 +59,8 @@ test.describe('Command palette (Ctrl+K)', () => {
     await page.goto('/');
     // Wait for hydration so the keydown listener is attached, and focus the document.
     await expect(page.locator('h1').first()).toBeVisible();
-    await page.locator('body').click();
+    // Focus the page by clicking plain text (the middle of the page can be the hero search button).
+    await page.locator('h1').first().click();
     await page.keyboard.press('Control+k');
 
     const search = page.getByPlaceholder(/What do you want to do/i);
@@ -76,7 +77,7 @@ test.describe('Command palette (Ctrl+K)', () => {
   test('Escape closes the palette', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('h1').first()).toBeVisible();
-    await page.locator('body').click();
+    await page.locator('h1').first().click();
     await page.keyboard.press('Control+k');
     await expect(page.getByPlaceholder(/What do you want to do/i)).toBeVisible();
     await page.keyboard.press('Escape');
