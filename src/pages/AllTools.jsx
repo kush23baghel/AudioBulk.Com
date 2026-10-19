@@ -1,37 +1,35 @@
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Search, X, Sparkles } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Search, X } from 'lucide-react';
 import { toolCategories, toolsList } from '../data/tools';
 import SeoMeta from '../components/SeoMeta';
 import { Button } from '../ui/controls';
-import { ToolIcon } from '../ui/icons';
+import { ToolCard } from '../ui/ToolCard';
+import { Reveal } from '../ui/motion';
 
 const CHIPS = [{ id: 'all', title: 'All' }, ...toolCategories];
+const EASE = [0.22, 1, 0.36, 1];
 
+// Cards glide into their new places when the filter changes; removed cards fade out.
 function ToolGrid({ tools }) {
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {tools.map((t) => (
-        <li key={t.id}>
-          <Link to={t.path} className="group flex h-full items-start gap-3 rounded-xl border border-line bg-paper p-4 transition-colors hover:border-line-strong hover:bg-sand/50">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sand text-wine">
-              <ToolIcon name={t.icon} size={19} />
-            </span>
-            <span className="min-w-0 space-y-0.5">
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold group-hover:text-wine">{t.name}</span>
-                {t.isAi && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-wine-soft px-2 py-0.5 text-xs font-semibold text-wine" title="Needs a free AI key">
-                    <Sparkles size={11} aria-hidden="true" /> AI
-                  </span>
-                )}
-              </span>
-              <span className="block text-sm text-muted">{t.desc}</span>
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <motion.ul layout className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <AnimatePresence initial={false} mode="popLayout">
+        {tools.map((t) => (
+          <motion.li
+            key={t.id}
+            layout
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.25, ease: EASE }}
+          >
+            <ToolCard tool={t} showAi />
+          </motion.li>
+        ))}
+      </AnimatePresence>
+    </motion.ul>
   );
 }
 
@@ -52,19 +50,20 @@ export default function AllTools() {
     (!q || t.name.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q)),
   );
   const category = toolCategories.find((c) => c.id === active);
+  const grouped = active === 'all' && !q;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 px-4 pb-24 pt-10 sm:px-6">
+    <>
       <SeoMeta title={category ? category.title : 'All tools'} description={category?.description} />
 
-      <header className="space-y-3">
-        <h1 className="text-4xl font-extrabold">{category ? category.title : 'All tools'}</h1>
-        <p className="text-lg text-muted">{tools.length} tools · free, no ads, nothing uploaded</p>
-      </header>
+      <div className="mx-auto max-w-6xl space-y-6 px-4 pb-10 pt-10 sm:px-6">
+        <header className="space-y-3">
+          <h1 className="text-4xl font-extrabold">{category ? category.title : 'All tools'}</h1>
+          <p className="text-lg text-muted">{tools.length} tools · free, no ads, nothing uploaded</p>
+        </header>
 
-      <div className="space-y-4">
-        <div className="flex max-w-xl items-center gap-3 rounded-xl border border-line-strong bg-paper px-4 focus-within:outline focus-within:outline-3 focus-within:outline-wine">
-          <Search size={19} className="shrink-0 text-muted" aria-hidden="true" />
+        <div className="flex max-w-xl items-center gap-3 rounded-xl border border-line-strong bg-paper px-4 transition-[border-color,box-shadow] duration-200 focus-within:border-wine/60 focus-within:shadow-lift">
+          <Search size={19} className="shrink-0 text-wine" aria-hidden="true" />
           <input
             id="tools-filter"
             type="text"
@@ -89,8 +88,8 @@ export default function AllTools() {
               type="button"
               onClick={() => pick(c.id)}
               aria-pressed={active === c.id}
-              className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
-                active === c.id ? 'border-wine bg-wine text-paper' : 'border-line bg-cream hover:border-line-strong hover:bg-sand'
+              className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-[background-color,border-color,color,transform] duration-200 active:scale-[0.96] ${
+                active === c.id ? 'border-wine bg-wine text-paper' : 'border-line-strong bg-paper hover:border-wine hover:text-wine'
               }`}
             >
               {c.title}
@@ -99,29 +98,33 @@ export default function AllTools() {
         </div>
       </div>
 
-      {tools.length === 0 ? (
-        <div className="space-y-4 rounded-2xl border border-line bg-paper p-10 text-center">
-          <p className="text-lg">No tools match “{query}”{category ? ` in ${category.title.toLowerCase()}` : ''}.</p>
-          <Button variant="secondary" onClick={() => { setQuery(''); pick('all'); }}>Show all tools</Button>
+      <div className="border-t border-line bg-sunken">
+        <div className="mx-auto max-w-6xl px-4 pb-24 pt-10 sm:px-6">
+          {tools.length === 0 ? (
+            <div className="space-y-4 rounded-2xl border border-line bg-paper p-10 text-center">
+              <p className="text-lg">No tools match “{query}”{category ? ` in ${category.title.toLowerCase()}` : ''}.</p>
+              <Button variant="secondary" onClick={() => { setQuery(''); pick('all'); }}>Show all tools</Button>
+            </div>
+          ) : grouped ? (
+            // Unfiltered: group by type so all the tools are easy to scan.
+            <div className="space-y-14">
+              {toolCategories.map((c) => (
+                <section key={c.id} className="space-y-4" aria-labelledby={`cat-${c.id}`}>
+                  <Reveal className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 id={`cat-${c.id}`} className="text-2xl font-bold">{c.title}</h2>
+                    <button type="button" onClick={() => pick(c.id)} className="text-sm font-semibold text-wine hover:underline">
+                      Only show {c.title.toLowerCase()}
+                    </button>
+                  </Reveal>
+                  <ToolGrid tools={tools.filter((t) => t.categoryId === c.id)} />
+                </section>
+              ))}
+            </div>
+          ) : (
+            <ToolGrid tools={tools} />
+          )}
         </div>
-      ) : active === 'all' && !q ? (
-        // Unfiltered: group by type so 70 tools are easy to scan.
-        <div className="space-y-12">
-          {toolCategories.map((c) => (
-            <section key={c.id} className="space-y-4" aria-labelledby={`cat-${c.id}`}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 id={`cat-${c.id}`} className="text-2xl font-bold">{c.title}</h2>
-                <button type="button" onClick={() => pick(c.id)} className="text-sm font-semibold text-wine hover:underline">
-                  Only show {c.title.toLowerCase()}
-                </button>
-              </div>
-              <ToolGrid tools={tools.filter((t) => t.categoryId === c.id)} />
-            </section>
-          ))}
-        </div>
-      ) : (
-        <ToolGrid tools={tools} />
-      )}
-    </div>
+      </div>
+    </>
   );
 }

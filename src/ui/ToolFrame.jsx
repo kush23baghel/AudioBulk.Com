@@ -50,8 +50,13 @@ export default function ToolFrame({ path, name, title, intro, faqs = [], childre
               <ul className="-mx-2 space-y-0.5">
                 {related.map((t) => (
                   <li key={t.path}>
-                    <Link to={t.path} className="block rounded-lg px-2 py-1.5 text-[15px] text-ink hover:bg-sand hover:text-wine">
-                      {t.name}
+                    <Link
+                      to={t.path}
+                      viewTransition
+                      className="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[15px] text-ink transition-colors duration-200 hover:bg-sand hover:text-wine"
+                    >
+                      <span className="transition-transform duration-200 ease-out-soft group-hover:translate-x-1">{t.name}</span>
+                      <ArrowRight size={14} className="shrink-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true" />
                     </Link>
                   </li>
                 ))}

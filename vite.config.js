@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { FontaineTransform } from 'fontaine'
 import { toolsList } from './src/data/tools.js'
 
 const SITE_URL = 'https://audiobulk.com'
@@ -39,14 +40,43 @@ function sitemapPlugin() {
   }
 }
 
+// Preload the two latin font files (src/ui/fonts.css) so the very first paint already
+// uses the real fonts. Their hashed names are only known after bundling, hence 'post'.
+const PRELOAD_FONTS = [/figtree-latin-wght-normal-.*\.woff2$/, /bricolage-grotesque-latin-wght-normal-.*\.woff2$/]
+function fontPreloadPlugin() {
+  return {
+    name: 'audiobulk-font-preload',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        const files = Object.keys(ctx.bundle || {}).filter((f) => PRELOAD_FONTS.some((re) => re.test(f)))
+        return files.map((f) => ({
+          tag: 'link',
+          attrs: { rel: 'preload', href: `/${f}`, as: 'font', type: 'font/woff2', crossorigin: '' },
+          injectTo: 'head-prepend',
+        }))
+      },
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     sitemapPlugin(),
+    fontPreloadPlugin(),
+    // Metric-matched local fallbacks ("Figtree fallback", …) so nothing shifts if a font is late.
+    FontaineTransform.vite({
+      fallbacks: ['Segoe UI', 'Helvetica Neue', 'Arial'],
+      resolvePath: (id) => new URL(id.replace(/^(\.\.\/)+/, './'), import.meta.url),
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png'],
+      // Cache the self-hosted fonts too, so every visit after the first paints instantly.
+      workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'] },
       manifest: {
         name: 'AudioBulk Tools',
         short_name: 'AudioBulk',

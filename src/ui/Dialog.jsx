@@ -19,6 +19,8 @@ export default function Dialog({ open, onClose, title, hideTitle = false, classN
       // A click on the dimmed area (the dialog element itself, outside the panel) closes it.
       onClick={(e) => e.target === ref.current && onClose()}
       aria-label={title}
+      // Let the dialog scroll natively instead of through the page's smooth scroller.
+      data-lenis-prevent=""
       className={`m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl border border-line bg-paper p-0 text-ink shadow-xl backdrop:bg-ink/40 ${className}`}
     >
       {open && (

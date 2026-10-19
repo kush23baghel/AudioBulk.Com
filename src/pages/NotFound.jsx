@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { toolsList } from '../data/tools';
-import { ToolIcon } from '../ui/icons';
+import { ToolCard } from '../ui/ToolCard';
 
 // A few popular tools, so a bad link still leads somewhere useful.
 const SUGGESTED_IDS = ['bulk-audio-converter', 'bulk-video-compressor', 'vocal-remover', 'video-to-gif', 'ai-story-generator', 'word-counter'];
@@ -31,14 +31,7 @@ export default function NotFound() {
       <section className="space-y-4">
         <h2 className="text-xl font-bold">Popular tools</h2>
         <ul className="grid gap-3 sm:grid-cols-2">
-          {suggestions.map((t) => (
-            <li key={t.id}>
-              <Link to={t.path} className="flex items-center gap-3 rounded-xl border border-line bg-paper px-4 py-3 hover:bg-sand/50">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-sand text-wine"><ToolIcon name={t.icon} size={17} /></span>
-                <span className="font-semibold">{t.name}</span>
-              </Link>
-            </li>
-          ))}
+          {suggestions.map((t) => <li key={t.id}><ToolCard tool={t} /></li>)}
         </ul>
       </section>
     </div>

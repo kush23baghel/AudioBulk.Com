@@ -11,10 +11,15 @@
   --color-wine-soft: #F7E6E3;
 
   --color-cream: #FDFAF3;
+  --color-sunken: #F6EEDC;
   --color-paper: #FFFEFA;
   --color-sand: #F5EBD0;
-  --color-line: #ECE2CA;
-  --color-line-strong: #DCCDA8;
+  --color-line: #E6D8B6;
+  --color-line-strong: #D4C094;
+
+  /* Hover lift: a soft wine-tinted shadow under a raised card. */
+  --shadow-lift: 0 14px 28px -14px rgb(127 1 31 / 0.38), 0 3px 8px -3px rgb(43 26 28 / 0.10);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 
   --color-ink: #2B1A1C;
   --color-muted: #6F5F5B;
@@ -24,8 +29,8 @@
   --color-bad: #A8321D;
   --color-bad-soft: #FBE7E1;
 
-  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
-  --font-body: 'Figtree', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Bricolage Grotesque fallback', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Figtree', 'Figtree fallback', 'Segoe UI', system-ui, sans-serif;
 }
 
 /* The redesigned shell. Scoped so the old dark pages are untouched until approval.
@@ -86,7 +91,42 @@
 }
 .ab-range:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Scroll-in reveal: blocks fade and rise as they enter the screen. Driven by scrolling itself,
+   so it never leaves content hidden (no support = no animation, content just shows). */
+@keyframes ab-reveal {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ab-reveal {
+      animation: ab-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+}
+
+/* Page changes cross-fade (View Transitions, where the browser supports them). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-out-soft);
+}
+
+/* The logo's sound bars "play" on hover. */
+@keyframes ab-bar {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.45); }
+}
+.ab-logo:hover .ab-bar { animation: ab-bar 0.9s var(--ease-out-soft) infinite; }
+.ab-logo:hover .ab-bar:nth-child(2) { animation-delay: 0.15s; }
+.ab-logo:hover .ab-bar:nth-child(3) { animation-delay: 0.3s; }
+
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none; }
+
   .ab-shell *,
   .ab-shell *::before,
   .ab-shell *::after {
