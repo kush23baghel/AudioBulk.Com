@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { readVideoInfo } from '../../lib/videoInfo';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
+import useToolState from '../../hooks/useToolState';
 
 const MODES = [
   { value: 'remove', label: 'Remove all sound', hint: 'The video becomes completely silent' },
@@ -11,7 +11,7 @@ const MODES = [
 ];
 
 export default function VideoMuter() {
-  const [mode, setMode] = useState('remove');
+  const [mode, setMode] = useToolState('mode', 'remove');
 
   const inspect = (info) => {
     if (!info || !info.ok) return null;

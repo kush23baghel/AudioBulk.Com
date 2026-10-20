@@ -16,6 +16,7 @@ import SearchDialog from './SearchDialog';
 import SettingsDialog from './SettingsDialog';
 import LeftNav from './LeftNav';
 import RightRail from './RightRail';
+import JobsChip from './JobsChip';
 
 const openSearch = () => window.dispatchEvent(new Event('open-command-palette'));
 const openSettings = () => window.dispatchEvent(new Event('open-ai-settings'));
@@ -167,6 +168,7 @@ export default function Shell() {
               <kbd className="hidden rounded border border-line px-1.5 text-xs lg:inline">Ctrl K</kbd>
               <span className="sr-only sm:hidden">Search tools</span>
             </button>
+            <JobsChip />
             <button
               type="button"
               onClick={openSettings}

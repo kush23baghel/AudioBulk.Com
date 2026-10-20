@@ -1,5 +1,5 @@
 # Roadmap: build what people want, one step at a time
-Status: Approved (2026-10-20). Work goes top to bottom. Each item gets its own plan doc + a verify script before it's built.
+Status: Approved (2026-10-20). A1 done 2026-10-21. Work goes top to bottom. Each item gets its own plan doc + a verify script before it's built.
 
 Why: see [competitor-research](2026-10-20-competitor-research.md).
 - **#1 complaint everywhere:** "said free, then asked for money".
@@ -8,7 +8,7 @@ Why: see [competitor-research](2026-10-20-competitor-research.md).
 - **Mid-job loss:** we (and competitors) lose your job when you switch tools.
 
 ## Part A: foundation (every tool benefits)
-- [ ] **A1. Jobs keep running when you switch tools.**
+- [x] **A1. Jobs keep running when you switch tools.**
   - A shared job store (`src/lib/jobStore.js`) replaces the per-page list in `useBulkProcessor`.
   - A header chip "1 job running · 40%" shows the job; finished files wait there.
   - The video engine stops only on Stop or Clear.

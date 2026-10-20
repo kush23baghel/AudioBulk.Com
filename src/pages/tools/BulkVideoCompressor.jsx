@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { readVideoInfo } from '../../lib/videoInfo';
 import BulkTool from '../../ui/BulkTool';
+import useToolState from '../../hooks/useToolState';
 import { ChoiceChips, QualitySlider } from '../../ui/controls';
 
 const LEVELS = [
@@ -21,8 +21,8 @@ const SIZES = [
 const formatMB = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 export default function BulkVideoCompressor() {
-  const [level, setLevel] = useState(2);
-  const [size, setSize] = useState('keep');
+  const [level, setLevel] = useToolState('level', 2);
+  const [size, setSize] = useToolState('size', 'keep');
   const chosen = LEVELS[level];
 
   const inspect = (info, file) => {

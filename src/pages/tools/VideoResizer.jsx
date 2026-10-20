@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { readVideoInfo } from '../../lib/videoInfo';
+import useToolState from '../../hooks/useToolState';
 
 const SIZES = [
   { value: '1080', label: '1080p', hint: 'Full HD, 1920×1080 for a wide video', height: 1080 },
@@ -22,8 +22,8 @@ const FITS = [
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 
 export default function VideoResizer() {
-  const [sizeValue, setSizeValue] = useState('720');
-  const [fit, setFit] = useState('fit');
+  const [sizeValue, setSizeValue] = useToolState('sizeValue', '720');
+  const [fit, setFit] = useToolState('fit', 'fit');
   const size = SIZES.find((s) => s.value === sizeValue);
   const isFixed = Boolean(size.w);
 

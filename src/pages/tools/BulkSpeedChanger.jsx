@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { formatDuration } from '../../lib/audioInfo';
+import useToolState from '../../hooks/useToolState';
 
 const SPEEDS = [
   { value: '0.25', label: '0.25×', hint: 'Four times slower. Good for picking out fast words.' },
@@ -31,7 +31,7 @@ const VIDEO_EXT = ['mp4', 'mov', 'webm', 'mkv', 'avi'];
 const LOSSY_AUDIO_EXT = ['mp3', 'm4a', 'aac', 'ogg'];
 
 export default function BulkSpeedChanger() {
-  const [speed, setSpeed] = useState('1.5');
+  const [speed, setSpeed] = useToolState('speed', '1.5');
 
   const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();

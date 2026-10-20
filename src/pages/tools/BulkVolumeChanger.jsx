@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips, QualitySlider } from '../../ui/controls';
+import useToolState from '../../hooks/useToolState';
 
 const LEVELS = [
   { label: 'Much quieter', detail: '25% of the original volume', factor: 0.25 },
@@ -37,9 +37,9 @@ const readMeasure = (text) => {
 };
 
 export default function BulkVolumeChanger() {
-  const [mode, setMode] = useState('same');
-  const [target, setTarget] = useState('-16');
-  const [level, setLevel] = useState(3);
+  const [mode, setMode] = useToolState('mode', 'same');
+  const [target, setTarget] = useToolState('target', '-16');
+  const [level, setLevel] = useToolState('level', 3);
   const chosen = LEVELS[level];
   const targetInfo = TARGETS.find((t) => t.value === target);
 

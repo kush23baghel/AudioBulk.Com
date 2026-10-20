@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { formatDuration } from '../../lib/audioInfo';
+import useToolState from '../../hooks/useToolState';
 
 // Both filters give a two-speaker (stereo) result so it plays normally everywhere.
 const MODES = [
@@ -24,7 +24,7 @@ const MODES = [
 ];
 
 export default function VocalRemover() {
-  const [mode, setMode] = useState('remove');
+  const [mode, setMode] = useToolState('mode', 'remove');
   const chosen = MODES.find((m) => m.value === mode);
 
   const processFile = async (file, onProgress, info) => {

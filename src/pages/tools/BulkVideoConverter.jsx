@@ -1,9 +1,9 @@
-﻿import { useState } from 'react';
-import { fetchFile } from '@ffmpeg/util';
+﻿import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { readVideoInfo } from '../../lib/videoInfo';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips, QualitySlider } from '../../ui/controls';
+import useToolState from '../../hooks/useToolState';
 
 const FORMATS = [
   { value: 'mp4', label: 'MP4', hint: 'Plays everywhere: phones, computers, TVs and social media. Pick this if you are not sure.', mime: 'video/mp4', copyFrom: ['mp4', 'm4v'], audio: ['-c:a', 'aac', '-b:a', '128k'] },
@@ -22,8 +22,8 @@ const QUALITY = [
 const extOf = (name) => (name.includes('.') ? name.split('.').pop().toLowerCase() : '');
 
 export default function BulkVideoConverter() {
-  const [format, setFormat] = useState('mp4');
-  const [quality, setQuality] = useState(1);
+  const [format, setFormat] = useToolState('format', 'mp4');
+  const [quality, setQuality] = useToolState('quality', 1);
   const fmt = FORMATS.find((f) => f.value === format);
 
   const inspect = (info, file) => {

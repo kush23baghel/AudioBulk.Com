@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { readVideoInfo } from '../../lib/videoInfo';
 import { grabFrames, convertImage } from '../../lib/videoFrames';
 import BulkTool from '../../ui/BulkTool';
+import useToolState from '../../hooks/useToolState';
 import { ChoiceChips } from '../../ui/controls';
 
 const WHICH = [
@@ -18,8 +18,8 @@ const FORMATS = [
 ];
 
 export default function FirstLastFrameExtractor() {
-  const [which, setWhich] = useState('both');
-  const [format, setFormat] = useState('jpg');
+  const [which, setWhich] = useToolState('which', 'both');
+  const [format, setFormat] = useToolState('format', 'jpg');
 
   const inspect = (info) => {
     if (!info || !info.ok) return null;

@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { reencodeGif } from '../../lib/gif';
 import BulkTool from '../../ui/BulkTool';
+import useToolState from '../../hooks/useToolState';
 import { ChoiceChips } from '../../ui/controls';
 import { readGifInfo, formatBytes } from '../../lib/gifInfo';
 
@@ -21,9 +21,9 @@ const SPEEDS = [
 ];
 
 export default function GifCompressor() {
-  const [colors, setColors] = useState('128');
-  const [maxWidth, setMaxWidth] = useState('0');
-  const [fps, setFps] = useState('0');
+  const [colors, setColors] = useToolState('colors', '128');
+  const [maxWidth, setMaxWidth] = useToolState('maxWidth', '0');
+  const [fps, setFps] = useToolState('fps', '0');
 
   const inspect = (info, file) => {
     if (!info) return null;

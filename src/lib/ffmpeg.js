@@ -3,6 +3,7 @@ import { toBlobURL } from '@ffmpeg/util';
 
 let ffmpegInstance = null;
 let loadPromise = null;
+let loadingInstance = null; // the engine while it is still downloading, so Stop can cancel it too
 
 export async function safeDelete(ffmpeg, filename) {
   if (!filename) return;
@@ -15,6 +16,7 @@ export async function safeDelete(ffmpeg, filename) {
 
 async function initFFmpeg() {
   const ffmpeg = new FFmpeg();
+  loadingInstance = ffmpeg;
 
   ffmpeg.on('log', ({ message }) => {
     console.log('[FFmpeg Log]', message);
@@ -22,11 +24,16 @@ async function initFFmpeg() {
 
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
 
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-  });
-
+  const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+  const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+  // Stopped while downloading: don't start an engine nobody wants any more.
+  if (loadingInstance !== ffmpeg) throw new Error('Stopped.');
+  await ffmpeg.load({ coreURL, wasmURL });
+  if (loadingInstance !== ffmpeg) {
+    ffmpeg.terminate();
+    throw new Error('Stopped.');
+  }
+  loadingInstance = null;
   ffmpegInstance = ffmpeg;
   return ffmpegInstance;
 }
@@ -34,13 +41,13 @@ async function initFFmpeg() {
 export const loadFFmpeg = () => {
   if (loadPromise) return loadPromise;
 
-  loadPromise = initFFmpeg().catch((error) => {
-    console.error('Failed to load FFmpeg.wasm:', error);
-    loadPromise = null;
+  const mine = initFFmpeg().catch((error) => {
+    if (error?.message !== 'Stopped.') console.error('Failed to load FFmpeg.wasm:', error);
+    if (loadPromise === mine) loadPromise = null; // a newer load may have started since
     throw error;
   });
-
-  return loadPromise;
+  loadPromise = mine;
+  return mine;
 };
 
 export const getFFmpeg = async () => {
@@ -49,6 +56,12 @@ export const getFFmpeg = async () => {
 };
 
 export async function terminateFFmpeg() {
+  // Still downloading: cancel that too, or a "stopped" job would start once it arrives.
+  if (loadingInstance) {
+    try { loadingInstance.terminate(); } catch { /* not started yet */ }
+    loadingInstance = null;
+    loadPromise = null;
+  }
   if (ffmpegInstance) {
     try {
       ffmpegInstance.terminate();

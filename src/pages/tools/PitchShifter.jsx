@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { formatDuration } from '../../lib/audioInfo';
+import useToolState from '../../hooks/useToolState';
 
 const STEP_OPTIONS = Array.from({ length: 25 }, (_, i) => {
   const value = i - 12;
@@ -25,7 +25,7 @@ function tempoChain(factor) {
 }
 
 export default function PitchShifter() {
-  const [steps, setSteps] = useState(3);
+  const [steps, setSteps] = useToolState('steps', 3);
 
   const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();

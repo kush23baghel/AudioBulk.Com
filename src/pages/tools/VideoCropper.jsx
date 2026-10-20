@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { readVideoInfo } from '../../lib/videoInfo';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
+import useToolState from '../../hooks/useToolState';
 
 const SHAPES = [
   { value: '16:9', label: 'Wide (16:9)', hint: 'YouTube and TV', rw: 16, rh: 9 },
@@ -55,8 +55,8 @@ const KEEP_WORDS = {
 };
 
 export default function VideoCropper() {
-  const [shapeValue, setShapeValue] = useState('9:16');
-  const [keep, setKeep] = useState('center');
+  const [shapeValue, setShapeValue] = useToolState('shapeValue', '9:16');
+  const [keep, setKeep] = useToolState('keep', 'center');
   const shape = SHAPES.find((s) => s.value === shapeValue);
 
   const inspect = (info) => {

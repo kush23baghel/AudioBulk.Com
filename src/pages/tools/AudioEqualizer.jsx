@@ -1,10 +1,10 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { denoiseToWav } from '../../lib/denoise';
 import { formatDuration } from '../../lib/audioInfo';
+import useToolState from '../../hooks/useToolState';
 
 const PRESETS = [
   { value: 'more-bass', label: 'More bass', hint: 'Fuller, deeper sound. Good for music on small speakers.', suffix: 'more_bass', filter: 'bass=g=8:f=100:w=0.5' },
@@ -32,8 +32,8 @@ const SAME_FORMATS = {
 };
 
 export default function AudioEqualizer() {
-  const [presetValue, setPresetValue] = useState('more-bass');
-  const [output, setOutput] = useState('same');
+  const [presetValue, setPresetValue] = useToolState('presetValue', 'more-bass');
+  const [output, setOutput] = useToolState('output', 'same');
   const preset = PRESETS.find((p) => p.value === presetValue);
 
   const inspect = (info) => {

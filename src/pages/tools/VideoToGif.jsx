@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
+import useToolState from '../../hooks/useToolState';
 import { ChoiceChips } from '../../ui/controls';
 import { readVideoInfo } from '../../lib/videoInfo';
 import { formatBytes } from '../../lib/gifInfo';
@@ -25,10 +25,10 @@ const SMOOTH = [
 ];
 
 export default function VideoToGif() {
-  const [start, setStart] = useState('0');
-  const [length, setLength] = useState('5');
-  const [width, setWidth] = useState('480');
-  const [fps, setFps] = useState('15');
+  const [start, setStart] = useToolState('start', '0');
+  const [length, setLength] = useToolState('length', '5');
+  const [width, setWidth] = useToolState('width', '480');
+  const [fps, setFps] = useToolState('fps', '15');
   const startSec = Math.max(0, Number(start) || 0);
   const lenSec = Number(length);
 

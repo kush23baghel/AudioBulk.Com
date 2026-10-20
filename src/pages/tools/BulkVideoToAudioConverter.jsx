@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips, QualitySlider } from '../../ui/controls';
+import useToolState from '../../hooks/useToolState';
 
 const FORMATS = [
   { value: 'mp3', label: 'MP3', hint: 'Plays on every phone, computer and car. Pick this if you are not sure.', mime: 'audio/mpeg', codec: ['-c:a', 'libmp3lame'] },
@@ -25,8 +25,8 @@ const STANDARD_KBPS = [64, 96, 128, 160, 192, 256, 320];
 const nearestStandard = (kbps) => STANDARD_KBPS.reduce((a, b) => (Math.abs(b - kbps) < Math.abs(a - kbps) ? b : a));
 
 export default function BulkVideoToAudioConverter() {
-  const [format, setFormat] = useState('mp3');
-  const [quality, setQuality] = useState(2);
+  const [format, setFormat] = useToolState('format', 'mp3');
+  const [quality, setQuality] = useToolState('quality', 2);
   const fmt = FORMATS.find((f) => f.value === format);
   const chosenKbps = parseInt(QUALITY[quality].kbps, 10);
 

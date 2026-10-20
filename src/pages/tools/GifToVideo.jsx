@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
+import useToolState from '../../hooks/useToolState';
 import { ChoiceChips } from '../../ui/controls';
 import { readGifInfo } from '../../lib/gifInfo';
 
@@ -12,7 +12,7 @@ const LOOPS = [
 ];
 
 export default function GifToVideo() {
-  const [loops, setLoops] = useState('1');
+  const [loops, setLoops] = useToolState('loops', '1');
 
   const inspect = (info) => {
     if (!info) return null;

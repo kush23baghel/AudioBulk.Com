@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips, QualitySlider } from '../../ui/controls';
+import useToolState from '../../hooks/useToolState';
 
 const FORMATS = [
   { value: 'mp3', label: 'MP3', hint: 'Plays on every phone, computer and car. Pick this if you are not sure.', mime: 'audio/mpeg', codec: ['-c:a', 'libmp3lame'] },
@@ -20,8 +20,8 @@ const LEVELS = [
 const formatSize = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 export default function BulkAudioCompressor() {
-  const [format, setFormat] = useState('mp3');
-  const [level, setLevel] = useState(2);
+  const [format, setFormat] = useToolState('format', 'mp3');
+  const [level, setLevel] = useToolState('level', 2);
   const fmt = FORMATS.find((f) => f.value === format);
   const chosenKbps = parseInt(LEVELS[level].kbps, 10);
 

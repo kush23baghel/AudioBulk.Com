@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { reencodeGif } from '../../lib/gif';
 import BulkTool from '../../ui/BulkTool';
+import useToolState from '../../hooks/useToolState';
 import { ChoiceChips } from '../../ui/controls';
 import { readGifInfo, formatBytes } from '../../lib/gifInfo';
 
@@ -22,9 +22,9 @@ const SPEEDS = [
 ];
 
 export default function GifEditor() {
-  const [action, setAction] = useState('resize');
-  const [width, setWidth] = useState('480');
-  const [speed, setSpeed] = useState('2');
+  const [action, setAction] = useToolState('action', 'resize');
+  const [width, setWidth] = useToolState('width', '480');
+  const [speed, setSpeed] = useToolState('speed', '2');
 
   const inspect = (info, file) => {
     if (!info) return null;

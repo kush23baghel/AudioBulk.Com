@@ -1,10 +1,10 @@
-import { useState } from 'react';
 import { fetchFile } from '@ffmpeg/util';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { formatDuration } from '../../lib/audioInfo';
 import { readVideoInfo } from '../../lib/videoInfo';
 import { grabFrames, convertImage } from '../../lib/videoFrames';
 import BulkTool from '../../ui/BulkTool';
+import useToolState from '../../hooks/useToolState';
 import { ChoiceChips } from '../../ui/controls';
 
 const MAX_FRAMES = 300;
@@ -31,8 +31,8 @@ const countFrames = (spacing, duration) => {
 };
 
 export default function VideoFrameExtractor() {
-  const [spacing, setSpacing] = useState('2');
-  const [format, setFormat] = useState('jpg');
+  const [spacing, setSpacing] = useToolState('spacing', '2');
+  const [format, setFormat] = useToolState('format', 'jpg');
 
   const inspect = (info) => {
     if (!info || !info.ok) return null;

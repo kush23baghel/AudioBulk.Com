@@ -55,6 +55,13 @@ export function StatusPill({ item, workingWord }) {
       </span>
     );
   }
+  if (item.status === 'queued') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-sm text-muted">
+        <LoaderCircle size={14} className="animate-spin" aria-hidden="true" /> Waiting for another job…
+      </span>
+    );
+  }
   return <span className="text-sm text-muted">Waiting</span>;
 }
 
@@ -70,7 +77,7 @@ function FileNote({ note }) {
   );
 }
 
-function FileRow({ item, info, note, workingWord, onRemove, busy }) {
+function FileRow({ item, info, note, workingWord, onRemove, onDownloaded, busy }) {
   const [listening, setListening] = useState(false);
   const previewOut = item.outputs?.find((o) => previewFor(o.name));
   const preview = previewOut && previewFor(previewOut.name);
@@ -113,7 +120,7 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
         {outputs.length === 1 && (
           <button
             type="button"
-            onClick={() => saveAs(outputs[0].url, outputs[0].name)}
+            onClick={() => { saveAs(outputs[0].url, outputs[0].name); onDownloaded?.([outputs[0].url]); }}
             className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-2.5 py-1 text-sm font-semibold text-wine hover:bg-sand"
             title={`Download ${outputs[0].name}`}
           >
@@ -124,7 +131,7 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
         {outputs.length > 1 && (
           <button
             type="button"
-            onClick={() => downloadFiles(outputs, `${item.name.replace(/\.[^.]+$/, '') || 'files'}_audiobulk.zip`)}
+            onClick={() => { downloadFiles(outputs, `${item.name.replace(/\.[^.]+$/, '') || 'files'}_audiobulk.zip`); onDownloaded?.(outputs.map((o) => o.url)); }}
             className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-2.5 py-1 text-sm font-semibold text-wine hover:bg-sand"
             title={`Download all ${outputs.length} as one .zip`}
           >
@@ -164,11 +171,11 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
   );
 }
 
-export default function FileList({ queue, infos = {}, notes = {}, workingWord, onRemove, busy }) {
+export default function FileList({ queue, infos = {}, notes = {}, workingWord, onRemove, onDownloaded, busy }) {
   return (
     <ul className="divide-y divide-line">
       {queue.map((item) => (
-        <FileRow key={item.id} item={item} info={infos[item.id]} note={notes[item.id]} workingWord={workingWord} onRemove={onRemove} busy={busy} />
+        <FileRow key={item.id} item={item} info={infos[item.id]} note={notes[item.id]} workingWord={workingWord} onRemove={onRemove} onDownloaded={onDownloaded} busy={busy && item.status === 'processing'} />
       ))}
     </ul>
   );
