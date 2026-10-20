@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { saveAs } from 'file-saver';
+import { downloadFiles } from '../lib/download';
 import { Music, Film, Image, FileText, Download, X, LoaderCircle, CircleCheck, CircleAlert, Headphones, Info, TriangleAlert, Eye } from 'lucide-react';
 import { describeAudio } from '../lib/audioInfo';
 import { describeVideo } from '../lib/videoInfo';
@@ -74,6 +75,9 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
   const previewOut = item.outputs?.find((o) => previewFor(o.name));
   const preview = previewOut && previewFor(previewOut.name);
   const facts = [formatSize(item.size), info?.isVideo ? describeVideo(info) : describeAudio(info)].filter(Boolean).join(' · ');
+  const outputs = item.outputs || [];
+  const images = outputs.filter((o) => previewFor(o.name)?.kind === 'image');
+  const allImages = outputs.length > 0 && images.length === outputs.length;
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sand text-wine">
@@ -90,7 +94,7 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
           </div>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
         <StatusPill item={item} workingWord={workingWord} />
         {preview && (
           <button
@@ -104,18 +108,30 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
             <preview.Icon size={14} aria-hidden="true" /> {preview.label}
           </button>
         )}
-        {item.outputs?.map((out) => (
+        {/* One result: a format chip. Many results: ONE zip button, never a chip per result
+            (37 chips from a long video once ran off the page). */}
+        {outputs.length === 1 && (
           <button
-            key={out.url}
             type="button"
-            onClick={() => saveAs(out.url, out.name)}
+            onClick={() => saveAs(outputs[0].url, outputs[0].name)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-2.5 py-1 text-sm font-semibold text-wine hover:bg-sand"
-            title={`Download ${out.name}`}
+            title={`Download ${outputs[0].name}`}
           >
             <Download size={14} aria-hidden="true" />
-            {out.name.split('.').pop().toUpperCase()}
+            {outputs[0].name.split('.').pop().toUpperCase()}
           </button>
-        ))}
+        )}
+        {outputs.length > 1 && (
+          <button
+            type="button"
+            onClick={() => downloadFiles(outputs, `${item.name.replace(/\.[^.]+$/, '') || 'files'}_audiobulk.zip`)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line-strong px-2.5 py-1 text-sm font-semibold text-wine hover:bg-sand"
+            title={`Download all ${outputs.length} as one .zip`}
+          >
+            <Download size={14} aria-hidden="true" />
+            {outputs.length} {allImages ? 'pictures' : 'files'} (.zip)
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onRemove(item.id)}
@@ -133,10 +149,13 @@ function FileRow({ item, info, note, workingWord, onRemove, busy }) {
             <video src={previewOut.url} controls playsInline className="max-h-80 w-full rounded-xl border border-line bg-ink" aria-label={`Preview of ${previewOut.name}`} />
           )}
           {preview.kind === 'image' && (
-            <div className="flex flex-wrap gap-2">
-              {item.outputs.filter((o) => previewFor(o.name)?.kind === 'image').slice(0, 12).map((o) => (
-                <img key={o.url} src={o.url} alt={o.name} className="h-28 rounded-lg border border-line object-contain" />
+            <div className="flex flex-wrap items-center gap-2">
+              {images.slice(0, 12).map((o) => (
+                <img key={o.url} src={o.url} alt={o.name} loading="lazy" className="h-24 max-w-full rounded-lg border border-line object-contain" />
               ))}
+              {images.length > 12 && (
+                <span className="rounded-lg bg-sand px-3 py-2 text-sm font-semibold text-wine">+{images.length - 12} more in the download</span>
+              )}
             </div>
           )}
         </div>

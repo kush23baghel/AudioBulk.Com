@@ -53,3 +53,7 @@ playwright-report/
 tests/**/test-screenshots/
 
 .vercel
+
+# Verification scripts: generated test files and outputs
+tests/verify/.fixtures/
+tests/verify/.out/
