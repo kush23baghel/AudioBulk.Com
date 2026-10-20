@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { fetchFile } from '@ffmpeg/util';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import { reencodeGif } from '../../lib/gif';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { readGifInfo, formatBytes } from '../../lib/gifInfo';
@@ -46,44 +45,17 @@ export default function GifEditor() {
   };
 
   const processFile = async (file, onProgress, info) => {
-    const ffmpeg = await getFFmpeg();
-    const id = Math.random().toString(36).slice(2, 9);
-    const inputName = `input_${id}.gif`;
-    const outputName = `output_${id}.gif`;
-    let progressHandler = null;
-    try {
-      if (info && !info.ok) throw new Error('This GIF could not be read. Try a different file.');
-      await ffmpeg.writeFile(inputName, await fetchFile(file));
-      progressHandler = ({ progress }) => onProgress(Math.min(100, Math.max(0, progress * 100)));
-      ffmpeg.on('progress', progressHandler);
-
-      let edit;
-      let suffix;
-      if (action === 'resize') {
-        edit = `scale='min(${width},iw)':-2:flags=lanczos`;
-        suffix = `${width}w`;
-      } else if (action === 'speed') {
-        edit = `setpts=PTS/${speed}`;
-        suffix = `${speed}x`;
-      } else if (action === 'reverse') {
-        edit = 'reverse';
-        suffix = 'reversed';
-      } else {
-        edit = 'crop=min(iw\\,ih):min(iw\\,ih)';
-        suffix = 'square';
-      }
-      const filter = `[0:v]${edit},split[a][b];[a]palettegen[p];[b][p]paletteuse`;
-      await ffmpeg.exec(['-i', inputName, '-filter_complex', filter, '-loop', '0', outputName]);
-
-      const data = await ffmpeg.readFile(outputName);
-      if (!data || data.length === 0) throw new Error('Could not edit this GIF. Try a different file.');
-      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
-      return { blob: new Blob([data.buffer], { type: 'image/gif' }), name: `${baseName}_${suffix}.gif` };
-    } finally {
-      if (progressHandler) ffmpeg.off('progress', progressHandler);
-      await safeDelete(ffmpeg, inputName);
-      await safeDelete(ffmpeg, outputName);
-    }
+    if (info && !info.ok) throw new Error('This GIF could not be read. Try a different file.');
+    const edits = {
+      resize: [{ maxWidth: Number(width) }, `${width}w`],
+      speed: [{ speed: Number(speed) }, `${speed}x`],
+      reverse: [{ reverse: true }, 'reversed'],
+      square: [{ square: true }, 'square'],
+    };
+    const [opts, suffix] = edits[action];
+    const { blob } = await reencodeGif(file, { ...opts, onProgress });
+    const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+    return { blob, name: `${baseName}_${suffix}.gif` };
   };
 
   const steps = [{ label: 'What do you want to do?', content: <ChoiceChips label="Action" options={ACTIONS} value={action} onChange={setAction} /> }];
@@ -106,7 +78,7 @@ export default function GifEditor() {
       faqs={[
         { q: 'Can I do more than one change?', a: 'One at a time. Edit your GIFs, then add the new ones and apply the next change.' },
         { q: 'Does the GIF still loop?', a: 'Yes. The edited GIF repeats forever.' },
-        { q: 'Does speed change the length?', a: 'Yes. Faster means a shorter GIF and slower means a longer one. Very fast speeds can look jumpy because GIFs have a limit on how quickly they can play.' },
+        { q: 'Does speed change the length?', a: 'Yes. Faster means a shorter GIF and slower means a longer one. When a sped-up GIF would be faster than browsers can play, some frames are joined so it still plays at the right speed everywhere.' },
         { q: 'Is quality lost?', a: 'A little can be, because each GIF is saved again with a fresh set of colors. Resizing smaller usually looks fine.' },
       ]}
     />

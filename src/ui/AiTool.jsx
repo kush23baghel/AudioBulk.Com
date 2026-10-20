@@ -1,10 +1,11 @@
 // One page for every AI writing tool. Each tool is just data in src/data/aiTools.js:
 // title, intro, input label, example, option chips, how to build the prompt, FAQs.
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, Copy, Check, RotateCcw, Square, KeyRound, LoaderCircle } from 'lucide-react';
+import { Sparkles, Copy, Check, RotateCcw, Square, KeyRound, LoaderCircle, Wand2 } from 'lucide-react';
 import { aiTools } from '../data/aiTools';
 import { toolsList } from '../data/tools';
-import { generateAIResponse } from '../lib/openrouter';
+import { chat } from '../lib/openrouter';
+import { runTool, improveAnswer } from '../lib/aiOutput';
 import useAiKeyStatus from '../hooks/useAiKeyStatus';
 import ToolFrame from './ToolFrame';
 import { Button, Card, ChoiceChips } from './controls';
@@ -55,27 +56,43 @@ export default function AiTool({ id }) {
   const [opts, setOpts] = useState(() => Object.fromEntries((def?.options || []).map((g) => [g.id, g.default ?? g.choices[0]?.value])));
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(''); // '' | 'writing' | 'improving'
+  const [note, setNote] = useState('');
   const [copied, setCopied] = useState(false);
   const abortRef = useRef(null);
+  const promptRef = useRef(null); // the prompt behind the current result, reused by "Make it better"
 
   useEffect(() => () => abortRef.current?.abort(), []);
   if (!def || !tool) return null;
 
-  const generate = async () => {
-    if (!input.trim()) { setError('Type what you want first, or press "Try an example".'); return; }
+  // Every tool runs the same checked workflow (src/lib/aiOutput.js): ask → clean → check → fix once.
+  const run = async (mode) => {
     setError('');
-    setResult('');
-    setBusy(true);
+    setNote('');
+    setBusy(mode);
     abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
     try {
-      const { system, user } = def.buildPrompt(input.trim(), opts);
-      setResult(await generateAIResponse(user, system, abortRef.current.signal));
+      if (mode === 'improving') {
+        const out = await improveAnswer(chat, promptRef.current, result, { signal });
+        setResult(out.text);
+        setNote(out.kept ? 'The new version broke the format, so we kept your current answer.' : 'Improved version.');
+      } else {
+        setResult('');
+        promptRef.current = def.buildPrompt(input.trim(), opts);
+        const out = await runTool(chat, promptRef.current, { signal });
+        setResult(out.text);
+      }
     } catch (err) {
       if (err.message !== 'Stopped.') setError(err.message);
     } finally {
-      setBusy(false);
+      setBusy('');
     }
+  };
+
+  const generate = () => {
+    if (!input.trim()) { setError('Type what you want first, or press "Try an example".'); return; }
+    run('writing');
   };
 
   const copy = async () => {
@@ -126,9 +143,9 @@ export default function AiTool({ id }) {
         ))}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={generate} disabled={busy}>
+          <Button onClick={generate} disabled={Boolean(busy)}>
             {busy ? <LoaderCircle size={17} className="animate-spin" aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
-            {busy ? 'Writing…' : 'Generate'}
+            {busy === 'writing' ? 'Writing…' : busy ? 'Improving…' : 'Generate'}
           </Button>
           {busy && <Button variant="quiet" onClick={() => abortRef.current?.abort()}><Square size={15} aria-hidden="true" /> Stop</Button>}
         </div>
@@ -140,15 +157,19 @@ export default function AiTool({ id }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold">Your result</h2>
             {result && !busy && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" onClick={copy}>{copied ? <><Check size={16} aria-hidden="true" /> Copied</> : <><Copy size={16} aria-hidden="true" /> Copy</>}</Button>
+                <Button variant="secondary" onClick={() => run('improving')} title="The AI reviews this answer, finds the weak parts and rewrites it. Takes about as long again."><Wand2 size={16} aria-hidden="true" /> Make it better</Button>
                 <Button variant="secondary" onClick={generate}><RotateCcw size={16} aria-hidden="true" /> Try again</Button>
               </div>
             )}
           </div>
           <div data-lenis-prevent="" className="max-h-[32rem] space-y-3 overflow-y-auto rounded-xl bg-cream px-4 py-3 text-[15px] leading-relaxed text-ink/90" aria-live="polite">
-            {busy ? <p className="flex items-center gap-2 text-muted"><LoaderCircle size={16} className="animate-spin" aria-hidden="true" /> The AI is writing. This usually takes 5–20 seconds.</p> : <ResultText text={result} />}
+            {busy
+              ? <p className="flex items-center gap-2 text-muted"><LoaderCircle size={16} className="animate-spin" aria-hidden="true" /> {busy === 'writing' ? 'The AI is writing and checking the answer. This usually takes 5–30 seconds.' : 'The AI is reviewing and improving the answer…'}</p>
+              : <ResultText text={result} />}
           </div>
+          {note && !busy && <p className="text-sm text-muted">{note}</p>}
         </Card>
       )}
     </ToolFrame>

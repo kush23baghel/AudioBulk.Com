@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useId } from 'react';
 import { ArrowUp, ArrowDown, X, Download, UploadCloud, Film } from 'lucide-react';
 import ToolFrame from '../../ui/ToolFrame';
 import { Button, Card, ChoiceChips } from '../../ui/controls';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import { createGifEncoder } from '../../lib/gif';
 import { formatBytes } from '../../lib/gifInfo';
 
 const MAX_PICTURES = 60;
@@ -37,10 +37,6 @@ function loadImage(url) {
     img.src = url;
   });
 }
-
-const canvasToPng = (canvas) => new Promise((resolve, reject) => {
-  canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('A picture could not be prepared.'))), 'image/png');
-});
 
 export default function GifMaker() {
   const [items, setItems] = useState([]); // { id, file, url, w, h }
@@ -127,19 +123,15 @@ export default function GifMaker() {
     setError('');
     setProgress(0);
     clearResult();
-    nextId.current += 1;
-    const id = `m${nextId.current}`;
-    const names = items.map((_, i) => `img${id}_${String(i + 1).padStart(3, '0')}.png`);
-    const outputName = `output_${id}.gif`;
-    let ffmpeg = null;
-    let progressHandler = null;
+    // Every picture is fitted onto a white frame of the same size, then encoded in a background worker.
+    const encoder = createGifEncoder({ width: frameW, height: frameH, loop, dither: true, lossy: 0 });
     try {
-      ffmpeg = await getFFmpeg();
-      // Every picture becomes a PNG of the same size, so the frames line up.
       const canvas = document.createElement('canvas');
       canvas.width = frameW;
       canvas.height = frameH;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingQuality = 'high';
+      let pending = null;
       for (let i = 0; i < items.length; i += 1) {
         const img = await loadImage(items[i].url);
         ctx.fillStyle = '#ffffff';
@@ -148,34 +140,21 @@ export default function GifMaker() {
         const dw = img.naturalWidth * scale;
         const dh = img.naturalHeight * scale;
         ctx.drawImage(img, (frameW - dw) / 2, (frameH - dh) / 2, dw, dh);
-        const png = await canvasToPng(canvas);
-        await ffmpeg.writeFile(names[i], new Uint8Array(await png.arrayBuffer()));
-        setProgress(Math.round(((i + 1) / items.length) * 30));
+        const rgba = ctx.getImageData(0, 0, frameW, frameH).data;
+        await pending;
+        pending = encoder.add(rgba, Number(seconds) * 1000);
+        setProgress(Math.round(((i + 1) / items.length) * 97));
       }
-      progressHandler = ({ progress: p }) => setProgress(30 + Math.max(0, Math.min(70, Math.round(p * 70))));
-      ffmpeg.on('progress', progressHandler);
-      const filter = '[0:v]split[a][b];[a]palettegen[p];[b][p]paletteuse';
-      await ffmpeg.exec([
-        '-framerate', String(1 / Number(seconds)),
-        '-i', `img${id}_%03d.png`,
-        '-filter_complex', filter,
-        '-loop', loop === 'forever' ? '0' : '-1',
-        outputName,
-      ]);
-      const data = await ffmpeg.readFile(outputName);
-      if (!data || data.length === 0) throw new Error('empty');
-      const blob = new Blob([data.buffer], { type: 'image/gif' });
+      await pending;
+      const blob = await encoder.finish();
       const url = URL.createObjectURL(blob);
       resultUrlRef.current = url;
+      setProgress(100);
       setResult({ url, size: blob.size });
     } catch {
+      encoder.cancel();
       setError('The GIF could not be made. Try fewer or smaller pictures, or different files.');
     } finally {
-      if (ffmpeg && progressHandler) ffmpeg.off('progress', progressHandler);
-      if (ffmpeg) {
-        for (const n of names) await safeDelete(ffmpeg, n);
-        await safeDelete(ffmpeg, outputName);
-      }
       setBusy(false);
     }
   };

@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Check } from 'lucide-react';
 import Dialog from './Dialog';
 import { Button } from './controls';
+import { DEFAULT_MODEL, currentModel } from '../lib/openrouter';
 
 const KEY = 'openRouterApiKey';
 const MODEL = 'openRouterModel';
-const DEFAULT_MODEL = 'meta-llama/llama-3-8b-instruct:free';
 
 function read(name, fallback = '') {
   try { return localStorage.getItem(name) || fallback; } catch { return fallback; }
@@ -15,7 +15,7 @@ function read(name, fallback = '') {
 
 function SettingsForm({ onDone }) {
   const [apiKey, setApiKey] = useState(() => read(KEY));
-  const [model, setModel] = useState(() => read(MODEL, DEFAULT_MODEL));
+  const [model, setModel] = useState(currentModel);
   const [show, setShow] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -75,7 +75,10 @@ function SettingsForm({ onDone }) {
           spellCheck={false}
           className="w-full rounded-lg border border-line-strong bg-cream px-3 py-2.5 font-mono text-sm outline-none focus:outline focus:outline-3 focus:outline-wine"
         />
-        <p className="text-sm text-muted">Leave this as it is unless you know which model you want.</p>
+        <p className="text-sm text-muted">
+          Leave it as <code className="font-mono">{DEFAULT_MODEL}</code> to use whichever free model is available. Or paste any model name from{' '}
+          <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer" className="font-semibold text-wine underline underline-offset-2">openrouter.ai/models</a>.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

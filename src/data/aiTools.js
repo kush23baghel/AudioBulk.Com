@@ -1,4 +1,13 @@
-// Data for every AI tool page. A shared component renders each tool from this.
+// Data for every AI tool page. A shared component renders each tool from this, and every prompt is
+// built the same universal way by src/lib/promptKit.js. A tool here only says what is special about it:
+//   role    who the AI writes as
+//   what    the job, in a few words ("write the plot")
+//   format  the exact answer layout; "## Heading" lines become required sections the code checks
+//   kind    creative | plan | faithful (faithful = rewrite/summarise, never invent facts)
+//   rules   craft rules for this tool, on top of the shared ones
+//   count   when the visitor picks a number, how to count the items in the answer
+//   scale   rewrites: answer length follows the length of the pasted text
+import { buildPrompt } from '../lib/promptKit.js';
 
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -16,18 +25,14 @@ const DEFAULT_FAQS = (what) => [
   { q: 'Will I get the same answer every time?', a: 'No. The AI gives a fresh answer each time, so press the button again if you want more ideas. Always read the result and fix anything that looks wrong.' },
 ];
 
-const BASE_RULES = (words) => [
-  'Rules:',
-  '- Start straight away with the content. Never write "Here is" or "Sure", and never add notes, apologies or a closing remark.',
-  '- Use simple, clear words. Be specific and vivid, not vague or generic.',
-  `- Keep the whole answer under ${words} words.`,
-  '- Use simple Markdown (## headings, bullet points, bold) only where it makes the answer easier to read.',
-].join('\n');
+// How to count items in an answer.
+const NUMBERED = { match: /^\s*\d+[.)]\s/, label: 'numbered items' };
+const H2 = { match: /^##\s/, label: '## sections' };
+const H3 = { match: /^###\s/, label: '### questions' };
 
 // Build a tool from a short description.
 function tool(c) {
   const options = c.options || [LENGTH];
-  const words = c.words || 600;
   return {
     title: c.title,
     intro: c.intro,
@@ -35,22 +40,12 @@ function tool(c) {
     placeholder: c.placeholder,
     example: c.example,
     options,
+    // → { system, user, temperature, plan } (plan = what the code checks in the answer)
     buildPrompt(input, opts = {}) {
-      const text = String(input || '').trim();
-      const picks = options
-        .map((g) => {
-          const v = opts[g.id] ?? g.default;
-          const ch = g.choices.find((x) => x.value === v);
-          return `- ${g.label}: ${ch ? ch.label : v}`;
-        })
-        .join('\n');
-      const factor = { short: 0.5, medium: 1, long: 1.4 }[opts.length] || 1;
-      const limit = Math.min(700, Math.round((words * factor) / 10) * 10);
-      const system = [c.role, '', 'How to format the answer:', c.format, '', BASE_RULES(limit)].join('\n');
-      const user = `${c.userLabel || 'My request'}:\n${text}\n\nMy choices:\n${picks}`;
-      return { system, user };
+      const picked = Object.fromEntries(options.map((g) => [g.id, opts[g.id] ?? g.default]));
+      return buildPrompt({ ...c, options, words: c.words || 600 }, input, picked);
     },
-    faqs: c.faqs || DEFAULT_FAQS(c.what || 'write the answer'),
+    faqs: c.faqs || DEFAULT_FAQS(c.what),
   };
 }
 
@@ -65,8 +60,10 @@ export const aiTools = {
     placeholder: 'A lighthouse keeper finds a message in a bottle from herself...',
     example: 'A shy baker in a small seaside town discovers her sourdough starter can tell her what her customers are secretly wishing for.',
     options: [opt('genre', 'Genre', GENRES, 'fantasy'), opt('length', 'How detailed?', [['short', 'Brief'], ['medium', 'Normal'], ['long', 'Detailed']], 'medium')],
-    role: 'You are a skilled story editor who builds tight, surprising plots.',
-    format: '## Title\n## Main Characters (3 to 4 bullets, each with a want and a flaw)\n## The Problem\n## Plot (Beginning, Middle, Turning Point, Ending as short paragraphs)\n## Theme (one sentence)',
+    role: 'You are a skilled story editor who builds tight, surprising plots where every event causes the next.',
+    format: '## Title\n(the story title on one line)\n## Main Characters\n(3 to 4 bullets: **Name**, what they want, their flaw)\n## The Problem\n(one short paragraph)\n## Plot\n(four short paragraphs starting with **Beginning:**, **Middle:**, **Turning Point:**, **Ending:**)\n## Theme\n(one sentence)',
+    kind: 'creative',
+    rules: ['Link events with "because" and "but", never "and then": each step must cause the next.', 'The turning point must surprise but feel fair looking back. The ending must come from a choice the main character makes.'],
     words: 550, userLabel: 'Story idea', what: 'write the plot',
   }),
   'ai-story-generator': tool({
@@ -77,7 +74,9 @@ export const aiTools = {
     example: 'A retired postman finds one last undelivered letter from 1974 and decides to deliver it himself.',
     options: [opt('genre', 'Genre', GENRES, 'adventure'), LENGTH, opt('age', 'Who is it for?', [['kids', 'Young kids'], ['teens', 'Teens'], ['adults', 'Adults']], 'adults')],
     role: 'You are an award-winning short story writer. You show feelings through action and dialogue instead of explaining them.',
-    format: 'Start with the title as a # heading, then the story in short paragraphs. Include a clear beginning, a problem that grows, a turning point and a satisfying ending. Use some dialogue.',
+    format: '# (the story title)\n\nThen the story in short paragraphs: a clear beginning, a problem that grows, a turning point and a satisfying ending. Include some dialogue.',
+    kind: 'creative',
+    rules: ['Open in the middle of a moment, not with weather, waking up or a description of the setting.', 'Never state a feeling directly ("she felt sad"); show it through what a character does or says.', 'Match words and themes to the chosen age group.'],
     words: 650, userLabel: 'Story idea', what: 'write the story',
   }),
   'story-outline-generator': tool({
@@ -88,7 +87,10 @@ export const aiTools = {
     example: 'A teenage girl inherits her grandfather\'s failing circus and has one summer to save it.',
     options: [opt('chapters', 'Number of chapters', [['6', '6 chapters'], ['10', '10 chapters'], ['15', '15 chapters']], '10'), opt('genre', 'Genre', GENRES, 'adventure')],
     role: 'You are a book editor who plans stories so the tension keeps rising and nothing feels wasted.',
-    format: 'Start with a one-line summary in bold. Then list every chapter as "### Chapter N: Title" followed by 2 to 3 sentences about what happens, what changes and the cliffhanger or hook. Use exactly the number of chapters asked for.',
+    format: 'First line: the whole story summed up in one sentence, in bold.\n\nThen every chapter as:\n### Chapter N: (chapter title)\n(2 to 3 short sentences, under 50 words: what happens, what changes, and the hook into the next chapter)',
+    kind: 'plan',
+    rules: ['Each chapter must change something important (a goal, a relationship, a secret). No filler chapters.', 'Stakes rise chapter by chapter; the biggest reveal or choice comes in the last quarter.'],
+    count: { option: 'chapters', match: /^#{2,4}\s*chapter\s+\d+/i, label: 'chapters' },
     words: 650, userLabel: 'Story idea', what: 'plan the outline',
   }),
   'story-rewriter': tool({
@@ -98,9 +100,12 @@ export const aiTools = {
     placeholder: 'Paste your story here...',
     example: 'The man walked to the store. He was sad. He bought some milk. Then he went home and was still sad because his dog had died last week.',
     options: [opt('goal', 'Make it', [['clearer', 'Clearer'], ['more vivid', 'More vivid'], ['more exciting', 'More exciting'], ['simpler', 'Simpler'], ['shorter', 'Shorter']], 'more vivid')],
-    role: 'You are a careful fiction editor. You rewrite stories to meet a goal while keeping every plot point, name and the writer\'s voice.',
-    format: 'Output only the rewritten story as paragraphs. Do not add new plot events. Do not list changes.',
-    words: 650, userLabel: 'Story to rewrite', what: 'rewrite your story',
+    role: "You are a careful fiction editor. You rewrite stories to meet a goal while keeping every plot point, name and the writer's voice.",
+    format: 'Only the rewritten story, as paragraphs.',
+    kind: 'faithful',
+    rules: ['Keep every event, in the same order. You may add sensory detail and small actions to reach the goal, but no new plot events or characters.', 'Do not list or explain your changes.'],
+    scale: (o) => ({ shorter: 0.7, 'more vivid': 1.8, 'more exciting': 1.6 }[o.goal] || 1.3),
+    words: 400, userLabel: 'Story to rewrite', what: 'rewrite the story to meet the chosen goal',
   }),
   'story-summarizer': tool({
     title: 'Get a short summary of a long story',
@@ -110,8 +115,12 @@ export const aiTools = {
     example: 'Mara found a map in her late aunt\'s piano. It led her across three towns, where each person she met knew a piece of her family\'s secret. At the end she learned her aunt had hidden a small fortune, but also a letter asking Mara to follow her own dreams instead. Mara used the money to open a music school.',
     options: [opt('length', 'Summary size', [['short', 'One paragraph'], ['medium', 'Short paragraphs'], ['long', 'Detailed']], 'medium')],
     role: 'You are an expert reader who summarizes stories accurately without adding anything that is not in the text.',
-    format: 'Start with a one-sentence summary in bold. Then give the summary. For medium and long, add "## Main Characters" with one short line each.',
-    words: 300, userLabel: 'Story', what: 'summarize your story',
+    format: (o) => '**(the whole story in one sentence)**\n\n' + (o.length === 'short'
+      ? 'Then one paragraph that tells what happens and how it ends.'
+      : '## Summary\n(what happens, in order, including the ending)\n## Main Characters\n(one bullet each: **Name**: who they are and what they do in the story)'),
+    kind: 'faithful',
+    rules: ['Include the ending. Keep events in the order they happen.', 'Name characters exactly as the text does.'],
+    words: 300, userLabel: 'Story', what: 'summarize the story',
   }),
   'continue-writing': tool({
     title: 'Get what happens next in your story',
@@ -120,9 +129,11 @@ export const aiTools = {
     placeholder: 'Paste what you have written so far...',
     example: 'The door at the end of the corridor had never been open. Tonight, for the first time, a thin line of golden light slid out from under it.',
     options: [LENGTH, opt('direction', 'What should happen?', [['natural', 'Whatever fits'], ['twist', 'A surprise twist'], ['tension', 'More tension'], ['calm', 'A calm moment']], 'natural')],
-    role: 'You are a novelist who continues other writers\' work. You match their voice, tense, point of view and pace exactly.',
-    format: 'Output only the new text that comes next, as paragraphs. Do not repeat the original text. Stop at a natural moment.',
-    words: 450, userLabel: 'Story so far', what: 'continue your story',
+    role: "You are a novelist who continues other writers' work. You match their voice, tense, point of view and pace exactly.",
+    format: 'Only the new text that comes next, as paragraphs.',
+    kind: 'creative',
+    rules: ['Do not repeat or summarise the original text. Start exactly where it stops.', 'Keep the same tense, point of view, names and sentence rhythm as the original.', 'Stop at a natural moment, ideally on a small hook.'],
+    words: 450, userLabel: 'Story so far', what: 'continue the story',
   }),
   'chapter-generator': tool({
     title: 'Turn a short scene plan into a full chapter',
@@ -132,7 +143,9 @@ export const aiTools = {
     example: 'Chapter 3: Jonas finally finds his missing brother in the abandoned mill, but his brother refuses to come home and says he is hiding from someone.',
     options: [opt('genre', 'Genre', GENRES, 'mystery'), LENGTH],
     role: 'You are a bestselling novelist. You write chapters with strong openings, clear scenes, natural dialogue and a hook at the end.',
-    format: 'Start with the chapter title as a ## heading. Then write the chapter as paragraphs with dialogue. End on a hook.',
+    format: '# (the chapter title)\n\nThen the chapter as paragraphs with dialogue, ending on a hook.',
+    kind: 'creative',
+    rules: ['Cover every event in the plan, in order.', 'Open in action or dialogue. Never state feelings directly; show them.', 'End on an unanswered question or a new danger.'],
     words: 650, userLabel: 'Chapter plan', what: 'write the chapter',
   }),
   'book-title-generator': tool({
@@ -143,8 +156,11 @@ export const aiTools = {
     example: 'A cozy mystery set in a village bakery where the baker keeps solving crimes by tasting clues.',
     options: [opt('style', 'Style of title', [['catchy', 'Catchy'], ['mysterious', 'Mysterious'], ['funny', 'Funny'], ['serious', 'Serious'], ['short', 'Very short']], 'catchy'), opt('count', 'How many?', [['10', '10 titles'], ['15', '15 titles'], ['20', '20 titles']], '10')],
     role: 'You are a publishing marketer who names books that people remember and want to pick up.',
-    format: 'A numbered list. Each line: **Title** - a few words on why it fits. Include a mix: some short, some with a subtitle. Give the exact number asked for.',
-    words: 450, userLabel: 'Book description', what: 'suggest titles',
+    format: 'A numbered list, one title per line:\n1. **Title** - a few words on why it fits',
+    kind: 'creative',
+    rules: ['Each title must use something specific from this book (an object, place, phrase or twist), not words that fit any book in the genre.', 'Mix shapes: some one or two words, some phrases, a few with a subtitle. No two titles may share their main word.'],
+    count: { option: 'count', ...NUMBERED },
+    words: 450, userLabel: 'Book description', what: 'suggest book titles',
   }),
   'poem-generator': tool({
     title: 'Write a poem about anything',
@@ -153,8 +169,14 @@ export const aiTools = {
     placeholder: 'The first snow of winter...',
     example: 'A grandmother\'s kitchen on a Sunday morning.',
     options: [opt('style', 'Style', [['rhyming', 'Rhyming'], ['free verse', 'Free verse'], ['haiku', 'Haiku'], ['limerick', 'Limerick']], 'rhyming'), LENGTH],
-    role: 'You are an acclaimed poet. You use fresh images, strong verbs and a clear emotional turn. You avoid cliches.',
-    format: 'Start with a short title in bold. Then the poem only, with line breaks. For haiku write 3 lines (5-7-5), for a limerick write 5 lines (AABBA). Obey the chosen style exactly.',
+    role: 'You are an acclaimed poet. You use fresh images, strong verbs and a clear emotional turn.',
+    format: (o) => '**(short title)**\n\n' + ({
+      haiku: 'Then exactly 3 lines with 5, 7 and 5 syllables.',
+      limerick: 'Then exactly 5 lines rhyming AABBA, with a funny last line.',
+      rhyming: 'Then the poem in stanzas of 4 lines with a clear rhyme scheme.',
+    }[o.style] || 'Then the poem in free verse, with line breaks.'),
+    kind: 'creative',
+    rules: ['Build the poem on concrete things you can see, hear, smell or touch from this topic.', 'Include one turn: a moment where the feeling or meaning shifts.', 'Never force a rhyme with a word that makes no sense; never use "heart / apart" or "fire / desire".'],
     words: 250, userLabel: 'Poem topic', what: 'write the poem',
   }),
   'lyrics-generator': tool({
@@ -165,8 +187,10 @@ export const aiTools = {
     example: 'A love song about two friends who grew up together and finally realise they are in love.',
     options: [opt('genre', 'Music style', ['pop', 'rock', 'country', 'hip hop', 'folk', 'ballad'], 'pop'), opt('mood', 'Mood', ['happy', 'sad', 'hopeful', 'angry', 'romantic'], 'hopeful')],
     role: 'You are a professional songwriter. You write lyrics with a memorable hook, natural rhythm and strong imagery.',
-    format: 'Start with the song title in bold. Label each part: [Verse 1], [Chorus], [Verse 2], [Chorus], [Bridge], [Chorus]. Lines should be singable and rhyme where the style needs it.',
-    words: 350, userLabel: 'Song idea', what: 'write the lyrics',
+    format: '**(song title)**\n\n[Verse 1]\n[Chorus]\n[Verse 2]\n[Chorus]\n[Bridge]\n[Chorus]\n(each label on its own line, followed by its lyrics)',
+    kind: 'creative',
+    rules: ['The chorus repeats the same words each time and contains the title.', 'Verses tell a small story with concrete details (places, objects, moments); the bridge changes the angle.', 'Keep lines short and singable, with similar length inside each part.'],
+    words: 350, userLabel: 'Song idea', what: 'write the song lyrics',
   }),
   'tv-show-generator': tool({
     title: 'Come up with a TV show: story, characters and episodes',
@@ -176,8 +200,11 @@ export const aiTools = {
     example: 'A comedy about three siblings who inherit a failing radio station in a tiny mountain town.',
     options: [opt('genre', 'Type of show', ['comedy', 'drama', 'thriller', 'science fiction', 'fantasy', 'mystery'], 'comedy'), opt('episodes', 'Episodes to list', [['5', '5 episodes'], ['8', '8 episodes'], ['10', '10 episodes']], '5')],
     role: 'You are a TV development executive who writes clear, exciting pitches.',
-    format: '## Title and Logline (one sentence)\n## The World\n## Main Characters (4 bullets with a want and a flaw)\n## Season 1 Episodes (each as "Episode N: Title - two sentences")\n## Why People Will Watch',
-    words: 650, userLabel: 'Show idea', what: 'write the show pitch',
+    format: '## Title and Logline\n(**Title** - one-sentence logline)\n## The World\n## Main Characters\n(4 bullets: **Name**, want, flaw)\n## Season 1 Episodes\n(one line each: **Episode N: Title** - two sentences)\n## Why People Will Watch',
+    kind: 'creative',
+    rules: ['Every episode needs its own clear problem, and together they build a season arc.', 'Characters must clash with each other because of their wants and flaws.'],
+    count: { option: 'episodes', match: /episode\s+\d+/i, label: 'episodes' },
+    words: 650, userLabel: 'Show idea', what: 'write the TV show pitch',
   }),
   'dialogue-generator': tool({
     title: 'Write a conversation between your characters',
@@ -187,7 +214,9 @@ export const aiTools = {
     example: 'Two old friends meet after ten years. One of them still owes the other an apology.',
     options: [opt('tone', 'Mood', ['tense', 'funny', 'emotional', 'friendly', 'angry'], 'tense'), LENGTH],
     role: 'You are a screenwriter known for natural dialogue. People interrupt, avoid the point and say less than they mean.',
-    format: 'Write as a script: "NAME: line". Add a few short stage directions in (brackets). Give each character a different voice. No narration outside brackets.',
+    format: 'A script, one line per turn:\nNAME: line\nAdd a few short stage directions in (brackets). No narration outside brackets.',
+    kind: 'creative',
+    rules: ['Give every character a clearly different way of speaking.', 'Nobody says exactly what they feel; the real conflict sits under the words.', 'Something must change by the last line (a secret out, a decision, a door closed).'],
     words: 400, userLabel: 'Scene', what: 'write the conversation',
   }),
   'dialogue-enhancer': tool({
@@ -198,8 +227,11 @@ export const aiTools = {
     example: '"Hello, Tom. I am angry at you because you did not come to my party," said Lisa. "I am sorry, Lisa. I was not able to come because I was ill," said Tom.',
     options: [opt('goal', 'Make it', [['natural', 'More natural'], ['emotional', 'More emotional'], ['funny', 'Funnier'], ['tense', 'More tense'], ['short', 'Shorter']], 'natural')],
     role: 'You are a dialogue coach. You keep what each character means but make them speak like real people, with distinct voices.',
-    format: 'Output only the improved dialogue in the same format as the original. Do not explain the changes.',
-    words: 450, userLabel: 'Dialogue to improve', what: 'improve your dialogue',
+    format: 'Only the improved dialogue, in the same layout as the original (quotes stay quotes, script stays script).',
+    kind: 'faithful',
+    rules: ['Use contractions, short lines and interruptions where they fit. Cut words that only explain.', 'Keep each speaker, every fact and the order of what is said. Do not explain your changes.'],
+    scale: (o) => (o.goal === 'short' ? 0.8 : 1.5),
+    words: 300, userLabel: 'Dialogue to improve', what: 'improve the dialogue',
   }),
   'world-building-generator': tool({
     title: 'Create a whole fantasy world with history, places and rules',
@@ -209,7 +241,9 @@ export const aiTools = {
     example: 'A desert world where water is the only money and giant sandworms are worshipped as gods.',
     options: [opt('tone', 'Feel', ['dark', 'hopeful', 'whimsical', 'epic'], 'epic'), LENGTH],
     role: 'You are a world-building expert who invents worlds with believable cause and effect.',
-    format: '## World Name and Summary\n## Geography (3 to 4 key places)\n## History (key events in order)\n## People and Cultures\n## Magic or Technology (with limits)\n## Big Conflicts\n## Story Hooks (3 bullets)',
+    format: '## World Name and Summary\n## Geography\n(3 to 4 key places, each with one striking detail)\n## History\n(key events in order)\n## People and Cultures\n## Magic or Technology\n(how it works and its limits)\n## Big Conflicts\n## Story Hooks\n(3 bullets)',
+    kind: 'creative',
+    rules: ['Everything connects: geography shapes culture, history explains today\'s conflicts, magic has costs that matter.', 'Give every place, group and event a proper name.'],
     words: 650, userLabel: 'World idea', what: 'build the world',
   }),
   'planet-generator': tool({
@@ -220,7 +254,9 @@ export const aiTools = {
     example: 'A cold, quiet planet covered in glowing forests that never see daylight.',
     options: [opt('type', 'Planet type', [['rocky', 'Rocky'], ['ocean', 'Ocean'], ['desert', 'Desert'], ['ice', 'Ice'], ['jungle', 'Jungle'], ['gas', 'Gas giant']], 'rocky'), opt('life', 'Life', [['animals', 'Animals only'], ['intelligent', 'Intelligent beings'], ['none', 'No life']], 'animals')],
     role: 'You are a science fiction writer with a good grasp of astronomy and ecology.',
-    format: '## Name and Quick Facts (size, sky, days and years, gravity)\n## Land and Water\n## Air and Weather\n## Life (2 to 3 creatures or plants, or why there is none)\n## Dangers\n## Why Visit',
+    format: '## Name and Quick Facts\n(bullets with numbers: size, gravity, day length, year length, sky)\n## Land and Water\n## Air and Weather\n## Life\n(2 to 3 creatures or plants, or why there is none)\n## Dangers\n## Why Visit',
+    kind: 'creative',
+    rules: ['Use real numbers (hours, degrees, g) and keep them consistent with each other.', 'Life must fit the conditions: explain in one line how each creature survives there.'],
     words: 550, userLabel: 'Planet idea', what: 'invent the planet',
   }),
   'country-maker': tool({
@@ -231,7 +267,9 @@ export const aiTools = {
     example: 'A small island nation of sailors and traders, constantly threatened by a bigger empire across the sea.',
     options: [opt('kind', 'Type', [['kingdom', 'Kingdom'], ['empire', 'Empire'], ['republic', 'Republic'], ['city-state', 'City-state']], 'kingdom'), LENGTH],
     role: 'You are a fantasy author who designs countries with believable politics, trade and culture.',
-    format: '## Name and Motto\n## Land and Climate\n## Cities (3 with one line each)\n## Government and Rulers\n## People and Customs\n## History (short timeline)\n## Enemies and Allies\n## Secrets',
+    format: '## Name and Motto\n## Land and Climate\n## Cities\n(3 bullets: **Name** - one line)\n## Government and Rulers\n## People and Customs\n## History\n(short timeline with years)\n## Enemies and Allies\n## Secrets',
+    kind: 'creative',
+    rules: ['Trade, climate and history must explain how the country is ruled and who its enemies are.', 'Name every city, ruler and event; give at least one custom that would surprise a visitor.'],
     words: 650, userLabel: 'Country idea', what: 'invent the country',
   }),
   'faction-generator': tool({
@@ -242,7 +280,9 @@ export const aiTools = {
     example: 'A religion that worships the moon and believes lying is the worst possible sin.',
     options: [opt('kind', 'Type', [['guild', 'Guild'], ['religion', 'Religion'], ['secret society', 'Secret society'], ['army', 'Army or order'], ['rebels', 'Rebels']], 'guild'), LENGTH],
     role: 'You are a game designer and novelist who creates factions that feel real and cause drama.',
-    format: '## Name and Symbol\n## What They Believe\n## Leaders and Ranks\n## What They Want\n## How They Act (rituals, habits)\n## Allies and Enemies\n## Secret\n## Story Hooks (2 bullets)',
+    format: '## Name and Symbol\n## What They Believe\n## Leaders and Ranks\n## What They Want\n## How They Act\n(rituals, habits, how to spot a member)\n## Allies and Enemies\n## Secret\n## Story Hooks\n(2 bullets)',
+    kind: 'creative',
+    rules: ['Give the group an inner tension (a rule its own leaders break, or two members who disagree).', 'Their secret must threaten what they claim to believe.'],
     words: 550, userLabel: 'Group idea', what: 'invent the group',
   }),
   'fantasy-currency-generator': tool({
@@ -253,7 +293,9 @@ export const aiTools = {
     example: 'A floating city of sky merchants who trade in feathers, glass and small bottled storms.',
     options: [opt('form', 'Form of money', [['coins', 'Coins'], ['notes', 'Paper notes'], ['objects', 'Strange objects'], ['mixed', 'A mix']], 'coins'), LENGTH],
     role: 'You are an economist and fantasy writer who invents believable money systems.',
-    format: '## Currency Name\n## The Denominations (a list from lowest to highest with exchange rates)\n## What They Look Like\n## What Things Cost (5 examples)\n## History\n## Forgery and Black Market',
+    format: '## Currency Name\n## Denominations\n(list from lowest to highest, each with its exact exchange rate to the one below it)\n## What They Look Like\n## What Things Cost\n(5 everyday examples with prices)\n## History\n## Forgery and Black Market',
+    kind: 'creative',
+    rules: ['Exchange rates and prices must add up and stay consistent with each other.', 'The money must come from what this world has plenty of, or lacks.'],
     words: 450, userLabel: 'World description', what: 'invent the money',
   }),
   'artifact-generator': tool({
@@ -264,7 +306,9 @@ export const aiTools = {
     example: 'A cracked silver mirror that shows you the person you could have been.',
     options: [opt('kind', 'Item type', [['weapon', 'Weapon'], ['armor', 'Armor'], ['jewelry', 'Jewelry'], ['tool', 'Tool or book'], ['any', 'Anything']], 'any'), opt('power', 'Power level', [['common', 'Small'], ['rare', 'Strong'], ['legendary', 'Legendary']], 'rare')],
     role: 'You are a fantasy game designer who writes memorable magic items with balanced powers.',
-    format: '## Name\n**Type and Rarity**\n## What It Looks Like\n## Powers (2 to 3 bullets)\n## The Price (a drawback or curse)\n## Legend (one short paragraph)',
+    format: '## Name and Rarity\n(the item name, then its type and rarity on the next line)\n## What It Looks Like\n## Powers\n(2 to 3 bullets, each with exactly what it does and how often)\n## The Price\n(a drawback or curse)\n## Legend\n(one short paragraph)',
+    kind: 'creative',
+    rules: ['Powers must be clear enough to use in a game: say what happens, how far, how often.', 'The price must hurt in a way that creates story, and fit the power level.'],
     words: 400, userLabel: 'Item idea', what: 'invent the item',
   }),
   'spell-generator': tool({
@@ -275,7 +319,10 @@ export const aiTools = {
     example: 'Healing spells for a forest druid who can only use magic at night.',
     options: [opt('count', 'How many?', [['1', 'One spell'], ['3', 'Three spells'], ['5', 'Five spells']], '3'), opt('power', 'Power level', [['beginner', 'Beginner'], ['advanced', 'Advanced'], ['forbidden', 'Forbidden']], 'beginner')],
     role: 'You are a fantasy game designer who creates clear, balanced and flavorful spells.',
-    format: 'For each spell: "## Name", then bullets for **School**, **Words or Gesture**, **Effect**, **Range and Time**, **Cost or Risk**, and a one-line **Flavor** description.',
+    format: 'For each spell:\n## (Spell Name)\n- **School:**\n- **Words or Gesture:**\n- **Effect:**\n- **Range and Time:**\n- **Cost or Risk:**\n- **Flavor:** (one line)',
+    kind: 'creative',
+    rules: ['Each spell does something different; no two are the same effect with a new name.', 'Effects and costs must match the power level and be clear enough to use in a game.'],
+    count: { option: 'count', ...H2, label: 'spells (## headings)' },
     words: 500, userLabel: 'Magic idea', what: 'invent the spells',
   }),
   'quest-generator': tool({
@@ -286,8 +333,12 @@ export const aiTools = {
     example: 'A mining town where the miners have stopped coming back from the deepest tunnel.',
     options: [opt('kind', 'Write a', [['quest', 'Quest'], ['prophecy', 'Prophecy']], 'quest'), opt('level', 'Difficulty', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']], 'medium')],
     role: 'You are a tabletop RPG game master who writes quests with clear goals, choices and a twist, and prophecies that are poetic but open to meaning.',
-    format: 'For a quest: ## Title, **Quest Giver**, **Goal**, ## Steps (numbered, 4 to 6), ## Twist, ## Rewards. For a prophecy: a short title, then 6 to 10 lines of poetic verse, then ## What It Really Means (2 to 3 sentences for the game master).',
-    words: 450, userLabel: 'Setting or idea', what: 'write the quest',
+    format: (o) => (o.kind === 'prophecy'
+      ? '**(short title)**\n\n(6 to 10 lines of poetic verse)\n\n## What It Really Means\n(2 to 3 sentences for the game master)'
+      : '## Title\n**Quest Giver:** (name and why they need help)\n**Goal:**\n## Steps\n(4 to 6 numbered steps; at least one offers the players a choice)\n## Twist\n## Rewards'),
+    kind: 'creative',
+    rules: ['Use names and places from the setting. Every step needs a concrete place, person or obstacle.', 'A prophecy hides its meaning in images that could be read two ways; the explanation reveals the true reading.'],
+    words: 450, userLabel: 'Setting or idea', what: 'write the quest or prophecy',
   }),
   'boss-generator': tool({
     title: 'Create a game boss or villain with a backstory and powers',
@@ -297,7 +348,11 @@ export const aiTools = {
     example: 'A once-kind king who made a deal with a demon to save his dying kingdom and now rules by fear.',
     options: [opt('kind', 'Type', [['boss', 'Game boss'], ['villain', 'Story villain']], 'boss'), opt('level', 'Danger level', [['easy', 'Low'], ['medium', 'Medium'], ['hard', 'Deadly']], 'medium')],
     role: 'You are a game and story designer who creates villains with strong motives, clear mechanics and a fair weakness.',
-    format: '## Name and Title\n## Appearance\n## Backstory\n## Motive\n## Powers and Attacks (3 to 4 bullets)\n## Phases of the Fight (for a game boss) or Plans (for a story villain)\n## Weakness\n## Memorable Line',
+    format: (o) => '## Name and Title\n## Appearance\n## Backstory\n## Motive\n## Powers and Attacks\n(3 to 4 bullets' +
+      (o.kind === 'boss' ? ', each with the warning sign players can see and how to dodge or counter it)\n## Fight Phases\n(what changes at each phase)' : ', each shown through what they have done)\n## Plans\n(their next three moves)') +
+      '\n## Weakness\n## Memorable Line',
+    kind: 'creative',
+    rules: ['The motive must be understandable, even sympathetic; the villain thinks they are right.', 'The weakness must come from the backstory, not be random.'],
     words: 550, userLabel: 'Villain idea', what: 'create the villain',
   }),
   'superpower-generator': tool({
@@ -308,7 +363,10 @@ export const aiTools = {
     example: 'A shy teenager whose power is related to shadows.',
     options: [opt('count', 'How many powers?', [['1', 'One'], ['3', 'Three']], '1'), opt('power', 'Strength', [['small', 'Small and clever'], ['strong', 'Strong'], ['godlike', 'Godlike']], 'strong')],
     role: 'You are a comic book writer who invents original, fair and fun superpowers.',
-    format: 'For each power: "## Power Name", **How It Works**, **What It Can Do** (3 bullets), **Limits and Weakness**, **Creative Use**, **Hero Origin** (two sentences).',
+    format: 'For each power:\n## (Power Name)\n**How It Works:**\n**What It Can Do:** (3 bullets)\n**Limits and Weakness:**\n**Creative Use:**\n**Hero Origin:** (two sentences)',
+    kind: 'creative',
+    rules: ['Avoid standard powers (flight, super strength, invisibility, telepathy) unless twisted into something new.', 'The limit must be specific and cause real trouble in a fight or in daily life.'],
+    count: { option: 'count', ...H2, label: 'powers (## headings)' },
     words: 450, userLabel: 'Power idea', what: 'invent the superpower',
   }),
   'romantic-scenario': tool({
@@ -319,8 +377,11 @@ export const aiTools = {
     example: 'A bookshop owner and a writer who keeps coming in every day but never buys a book.',
     options: [opt('mood', 'Mood', [['sweet', 'Sweet'], ['funny', 'Funny'], ['dramatic', 'Dramatic'], ['slow burn', 'Slow burn']], 'sweet'), opt('count', 'How many ideas?', [['3', '3 scenes'], ['5', '5 scenes']], '3')],
     role: 'You are a romance author. You write warm, tasteful scenes that focus on feelings, tension and small details. Keep everything suitable for general audiences.',
-    format: 'For each idea: "## Scene N: Title", then a short paragraph with the setup, the moment of connection and a closing line of dialogue.',
-    words: 550, userLabel: 'Characters and setting', what: 'write the scenes',
+    format: 'For each idea:\n## Scene N: (title)\n(a short paragraph: the setup, the moment of connection, and a closing line of dialogue)',
+    kind: 'creative',
+    rules: ['Each scene uses a different place and a different small object or habit of these characters.', 'Show attraction through specific actions and words, never through clichés like "their eyes met".'],
+    count: { option: 'count', match: /^##\s*scene/i, label: 'scenes' },
+    words: 550, userLabel: 'Characters and setting', what: 'write the romantic scenes',
   }),
   'character-outfit': tool({
     title: 'Describe what your character wears, in detail',
@@ -330,7 +391,9 @@ export const aiTools = {
     example: 'A grumpy old pirate captain who secretly loves gardening.',
     options: [opt('setting', 'Setting', [['fantasy', 'Fantasy'], ['modern', 'Modern'], ['historical', 'Historical'], ['sci-fi', 'Science fiction']], 'fantasy'), opt('occasion', 'Occasion', [['everyday', 'Everyday'], ['battle', 'Battle or travel'], ['formal', 'Formal event']], 'everyday')],
     role: 'You are a costume designer who creates outfits that tell you who the character is at a glance.',
-    format: '## Overall Look (two sentences)\n## Outfit Pieces (bullets: head, top, bottom, shoes, accessories, each with color and material)\n## Small Details That Tell a Story\n## Color Palette (3 to 5 colors)',
+    format: '## Overall Look\n(two sentences)\n## Outfit Pieces\n(bullets for head, top, bottom, shoes, accessories; each with colour and material)\n## Small Details That Tell a Story\n## Color Palette\n(3 to 5 named colours)',
+    kind: 'creative',
+    rules: ['Every detail should reveal something about the character (their past, habits or secret).', 'Name exact materials and colours (the kind of fabric or metal, the precise shade), never just "nice" or "dark".'],
     words: 400, userLabel: 'Character', what: 'describe the outfit',
   }),
   'ai-character': tool({
@@ -341,7 +404,9 @@ export const aiTools = {
     example: 'A 35-year-old night nurse who secretly writes mystery novels.',
     options: [opt('role', 'Role in the story', [['hero', 'Hero'], ['villain', 'Villain'], ['sidekick', 'Sidekick'], ['mentor', 'Mentor']], 'hero'), opt('genre', 'Genre', GENRES, 'drama')],
     role: 'You are a novelist who creates deep, believable characters with contradictions.',
-    format: '## Name, Age and Role\n## Looks\n## Personality (traits plus one contradiction)\n## Backstory\n## What They Want and What They Need\n## Fears and Flaws\n## How They Talk (with one sample line)\n## Relationships',
+    format: '## Name, Age and Role\n## Looks\n## Personality\n(traits plus one contradiction)\n## Backstory\n## Want and Need\n(what they think they want vs. what they really need)\n## Fears and Flaws\n## How They Talk\n(with one sample line)\n## Relationships',
+    kind: 'creative',
+    rules: ['Give the character one habit or object that is clearly theirs.', 'The backstory must explain the flaw; the want and the need must pull against each other.'],
     words: 550, userLabel: 'Character idea', what: 'create the character',
   }),
   'yt-video-ideas': tool({
@@ -352,7 +417,10 @@ export const aiTools = {
     example: 'A beginner-friendly cooking channel for college students who have little time and money.',
     options: [opt('type', 'Video type', [['tutorial', 'How-to'], ['list', 'List video'], ['story', 'Story or vlog'], ['review', 'Review'], ['shorts', 'Short clips']], 'tutorial'), opt('count', 'How many ideas?', [['5', '5 ideas'], ['10', '10 ideas']], '10')],
     role: 'You are a YouTube growth coach who knows what makes people click and keep watching.',
-    format: 'A numbered list. Each item: **Catchy title** (under 60 characters), then one line for the hook in the first 5 seconds, and one line on why people would search for it.',
+    format: 'A numbered list. Each item:\n1. **Catchy title** (under 60 characters)\n   - Hook: what happens in the first 5 seconds\n   - Why it works: who searches for this and why',
+    kind: 'plan',
+    rules: ['Each title promises one specific result, number or surprise for this exact audience, never something vague that fits any channel.','No clickbait the video could not deliver. Every idea must be different, not the same video reworded.'],
+    count: { option: 'count', ...NUMBERED },
     words: 600, userLabel: 'Channel or topic', what: 'suggest video ideas',
   }),
   'yt-description-gen': tool({
@@ -363,8 +431,10 @@ export const aiTools = {
     example: 'A 12-minute video showing how to make fresh pasta at home with only flour and eggs.',
     options: [opt('type', 'Video type', [['tutorial', 'How-to'], ['review', 'Review'], ['vlog', 'Vlog'], ['entertainment', 'Entertainment']], 'tutorial'), opt('tone', 'Tone', TONES.slice(0, 3), 'friendly')],
     role: 'You are a YouTube SEO writer. You put the key words in the first two lines and write for real people first.',
-    format: 'First, 2 sentences that hook and include the main keyword. Then a short paragraph of what viewers will learn. Then "Timestamps:" with 4 to 6 sample lines like 0:00 Intro. Then a short call to action (like and subscribe). End with 3 to 5 hashtags.',
-    words: 250, userLabel: 'Video', what: 'write the description',
+    format: '(2 sentences that hook and include the main keyword)\n\n(a short paragraph: what viewers will learn or see)\n\nTimestamps:\n0:00 Intro\n(4 to 6 lines that fit the video length)\n\n(one short call to action)\n\n(3 to 5 hashtags on one line)',
+    kind: 'plan',
+    rules: ['Use the real details given (length, steps, ingredients, products). Timestamps must fit inside the video length.', 'Write for a viewer, not a robot: no keyword lists, no repeating the same keyword more than 3 times.'],
+    words: 250, userLabel: 'Video', what: 'write the YouTube description',
   }),
   'yt-channel-name': tool({
     title: 'Get catchy name ideas for your channel',
@@ -374,8 +444,11 @@ export const aiTools = {
     example: 'Calm, relaxing woodworking videos for beginners.',
     options: [opt('style', 'Style of name', [['catchy', 'Catchy'], ['professional', 'Professional'], ['funny', 'Funny'], ['one word', 'One word'], ['creative', 'Made-up word']], 'catchy'), opt('count', 'How many?', [['10', '10 names'], ['20', '20 names']], '10')],
     role: 'You are a branding expert who invents names that are short, easy to spell and easy to say.',
-    format: 'A numbered list. Each line: **Name** - a few words on the idea behind it. Give the exact number asked for. Do not include names that are very common.',
-    words: 400, userLabel: 'Channel', what: 'suggest names',
+    format: 'A numbered list, one name per line:\n1. **Name** - a few words on the idea behind it',
+    kind: 'creative',
+    rules: ['Names are 1 to 3 words, easy to spell after hearing them once, with no numbers or hyphens.', 'Avoid overused words (Hub, TV, Official, Channel, Pro, Master, Daily, Vibes) and names of famous brands.'],
+    count: { option: 'count', ...NUMBERED },
+    words: 400, userLabel: 'Channel', what: 'suggest channel names',
   }),
   'newsletter-generator': tool({
     title: 'Write an email newsletter in minutes',
@@ -385,7 +458,9 @@ export const aiTools = {
     example: 'Monthly update for a small bike shop: new summer bikes arrived, free tune-up day on the 15th, and a customer story.',
     options: [opt('tone', 'Tone', TONES, 'friendly'), LENGTH],
     role: 'You are an email marketing writer. You write newsletters that people open and read to the end.',
-    format: '**Subject line:** (under 50 characters)\n**Preview text:** (under 90 characters)\n\nThen the newsletter: a warm greeting, a short intro, 2 to 3 clear sections with ## headings, one clear call to action and a friendly sign-off.',
+    format: '**Subject line:** (under 50 characters)\n**Preview text:** (under 90 characters)\n\n(a short greeting and intro)\n\n(2 to 3 sections, each with its own ## heading named after its topic)\n\n(one clear call to action, then a friendly sign-off)',
+    kind: 'plan',
+    rules: ['Use every fact given (dates, prices, names, offers) and invent no new offers, prices or dates; write [placeholder] where a needed detail is missing.', 'The subject line names a concrete benefit or news, not "Our monthly newsletter".'],
     words: 450, userLabel: 'Newsletter topic', what: 'write the newsletter',
   }),
   'faq-generator': tool({
@@ -395,9 +470,12 @@ export const aiTools = {
     placeholder: 'Paste the text of your product page, service or article...',
     example: 'CloudNotes is a note app that works offline and syncs when you are online. It is free for up to 100 notes. The Pro plan costs 4 dollars a month and gives unlimited notes and file attachments.',
     options: [opt('count', 'How many questions?', [['5', '5 questions'], ['8', '8 questions'], ['12', '12 questions']], '8'), opt('tone', 'Tone', TONES.slice(0, 3), 'friendly')],
-    role: 'You are a customer support writer. You write the questions real customers would ask, with short, honest answers that use only facts from the given text. If a fact is missing, do not make one up.',
-    format: 'Write each pair as "### Question?" followed by a 1 to 3 sentence answer. Order from the most common question to the least. Give the exact number of questions asked for.',
-    words: 500, userLabel: 'Product or page text', what: 'write the questions',
+    role: 'You are a customer support writer. You write the questions real customers would ask, with short, honest answers.',
+    format: 'Each pair as:\n### (Question?)\n(a 1 to 3 sentence answer)\n\nOrder from the most common question to the least.',
+    kind: 'faithful',
+    rules: ['Answers use only facts from the text. If the text does not answer a natural question, say so plainly (for example "The page does not say; contact support.") instead of guessing.', 'Write questions the way a customer would type them.'],
+    count: { option: 'count', ...H3 },
+    words: 500, userLabel: 'Product or page text', what: 'write the questions and answers',
   }),
   'text-rephrase': tool({
     title: 'Say the same thing in different words',
@@ -406,8 +484,11 @@ export const aiTools = {
     placeholder: 'Paste your text here...',
     example: 'We are writing to let you know that your order has been delayed due to unexpected issues at our warehouse. We apologise for any inconvenience this may cause.',
     options: [opt('tone', 'Tone', [['friendly', 'Friendly'], ['professional', 'Professional'], ['casual', 'Casual'], ['formal', 'Formal'], ['simple', 'Very simple']], 'friendly'), opt('size', 'Length', [['same', 'About the same'], ['shorter', 'Shorter'], ['longer', 'A bit longer']], 'same')],
-    role: 'You are a careful editor. You rewrite text in the chosen tone using different words and sentence shapes. You keep the exact meaning, facts, names and numbers. You never add new information.',
-    format: 'Output only the rephrased text in the same structure (paragraphs stay paragraphs, lists stay lists).',
-    words: 600, userLabel: 'Text to rephrase', what: 'rephrase your text',
+    role: 'You are a careful editor. You rewrite text in the chosen tone using different words and sentence shapes.',
+    format: 'Only the rephrased text, in the same structure (paragraphs stay paragraphs, lists stay lists).',
+    kind: 'faithful',
+    rules: ['Keep every fact, name and number. Change the wording and sentence shapes, not the meaning.'],
+    scale: (o) => ({ shorter: 0.75, longer: 1.6 }[o.size] || 1.25),
+    words: 200, userLabel: 'Text to rephrase', what: 'rephrase the text in the chosen tone',
   }),
 };

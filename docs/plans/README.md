@@ -41,3 +41,4 @@ The problem or request that started this.
 | 2026-10-18 | Full redesign, phases 0–8 (master plan, summarised in [`2026-10-18-redesign-master.md`](2026-10-18-redesign-master.md)) | Phases 0–6 done; 7–8 left |
 | 2026-10-19 | [Fix: many results overflow the file row](2026-10-19-fix-many-results.md) | Done |
 | 2026-10-20 | [Rebuild the remaining 52 tools (phases 4–6)](2026-10-20-remaining-52-tools.md) | Done |
+| 2026-10-20 | [AI tools that never give generic slop + a faster GIF engine](2026-10-20-ai-quality-and-gif-engine.md) | Done |

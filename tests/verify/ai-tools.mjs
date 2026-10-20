@@ -34,6 +34,17 @@ for (const tool of ['poem-generator', 'faq-generator', 'text-rephrase', 'boss-ge
     report(false, tool, 'ERROR ' + (err || e.message.split('\n')[0]));
   }
 }
+// "Make it better" on the last result: a second, improved answer replaces the first.
+try {
+  const before = (await page.locator('main .overflow-y-auto').first().innerText()).trim();
+  await page.getByRole('button', { name: 'Make it better' }).click();
+  await page.getByRole('button', { name: 'Make it better' }).waitFor({ timeout: 120000 });
+  const after = (await page.locator('main .overflow-y-auto').first().innerText()).trim();
+  const note = await page.getByText(/Improved version|kept your current answer/).first().innerText().catch(() => '');
+  report(after.length > 40 && after !== before && Boolean(note), 'Make it better', `${after.length} chars, note: "${note}"`);
+} catch (e) {
+  report(false, 'Make it better', 'ERROR ' + e.message.split('\n')[0]);
+}
 report(errors.length === 0, 'Page errors', errors.length ? errors.join(' || ') : 'none');
 await browser.close();
 done();

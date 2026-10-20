@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { fetchFile } from '@ffmpeg/util';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import { reencodeGif } from '../../lib/gif';
 import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { readGifInfo, formatBytes } from '../../lib/gifInfo';
@@ -41,38 +40,21 @@ export default function GifCompressor() {
   };
 
   const processFile = async (file, onProgress, info) => {
-    const ffmpeg = await getFFmpeg();
-    const id = Math.random().toString(36).slice(2, 9);
-    const inputName = `input_${id}.gif`;
-    const outputName = `output_${id}.gif`;
-    let progressHandler = null;
-    try {
-      if (info && !info.ok) throw new Error('This GIF could not be read. Try a different file.');
-      await ffmpeg.writeFile(inputName, await fetchFile(file));
-      progressHandler = ({ progress }) => onProgress(Math.min(100, Math.max(0, progress * 100)));
-      ffmpeg.on('progress', progressHandler);
-
-      const steps = [];
-      if (fps !== '0') steps.push(`fps=${fps}`);
-      // Only ever shrink the picture, never stretch it.
-      if (maxWidth !== '0') steps.push(`scale='min(${maxWidth},iw)':-2:flags=lanczos`);
-      steps.push('split[a][b]');
-      const filter = `[0:v]${steps.join(',')};[a]palettegen=max_colors=${colors}[p];[b][p]paletteuse`;
-      await ffmpeg.exec(['-i', inputName, '-filter_complex', filter, '-loop', '0', outputName]);
-
-      const data = await ffmpeg.readFile(outputName);
-      if (!data || data.length === 0) throw new Error('Could not shrink this GIF. Try a different file.');
-      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
-      // A bigger result is no use, so give the original back in that case.
-      if (data.length >= file.size) {
-        return { blob: file, name: `${baseName}_already_small.gif` };
-      }
-      return { blob: new Blob([data.buffer], { type: 'image/gif' }), name: `${baseName}_smaller.gif` };
-    } finally {
-      if (progressHandler) ffmpeg.off('progress', progressHandler);
-      await safeDelete(ffmpeg, inputName);
-      await safeDelete(ffmpeg, outputName);
-    }
+    if (info && !info.ok) throw new Error('This GIF could not be read. Try a different file.');
+    // No dithering and a looser "same pixel" match: both make the file much easier to squeeze.
+    const lossy = { 256: 150, 128: 300, 64: 500 }[colors];
+    const { blob } = await reencodeGif(file, {
+      maxColors: Number(colors),
+      maxWidth: Number(maxWidth),
+      maxFps: Number(fps),
+      dither: false,
+      lossy,
+      onProgress,
+    });
+    const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+    // A bigger result is no use, so give the original back in that case.
+    if (blob.size >= file.size) return { blob: file, name: `${baseName}_already_small.gif` };
+    return { blob, name: `${baseName}_smaller.gif` };
   };
 
   return (

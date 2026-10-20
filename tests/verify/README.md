@@ -11,7 +11,13 @@ node tests/verify/fixtures.mjs        # once: builds test files into tests/verif
 npm run build && npm run preview      # in another terminal: the app on http://localhost:4173
 node tests/verify/audio-tools.mjs     # 8 audio tools + smart notes + loudness + noise removal
 node tests/verify/video-tools.mjs     # 9 video tools + many-results layout on desktop and phone
+node tests/verify/gif-tools.mjs       # 5 GIF tools: size, frames, length, and picture match (PSNR) vs the source
+node tests/verify/ai-checker.mjs      # AI answer cleaner/checker, offline (no key, no app needed)
+node tests/verify/ai-quality.mjs      # all 32 AI tools on 2 models (key from .env); add model names to pick others
+node tests/verify/ai-tools.mjs        # the real AI page in the browser, incl. "Make it better"
 ```
+AI answers from `ai-quality.mjs` are saved in `.out/ai/<model>/` so you can read them.
+Run only some tools with `TOOLS=boss-generator,poem-generator node tests/verify/ai-quality.mjs`.
 Each line prints `OK` or `BAD` with the measured numbers; the script exits with 1 if anything failed.
 Outputs and screenshots go to `tests/verify/.out/` (ignored by git).
 

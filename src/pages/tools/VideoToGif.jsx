@@ -5,6 +5,7 @@ import BulkTool from '../../ui/BulkTool';
 import { ChoiceChips } from '../../ui/controls';
 import { readVideoInfo } from '../../lib/videoInfo';
 import { formatBytes } from '../../lib/gifInfo';
+import { createGifEncoder, delayFor, fitWidth, openVideo } from '../../lib/gif';
 
 const LENGTHS = [
   { value: '3', label: '3 seconds' },
@@ -48,7 +49,51 @@ export default function VideoToGif() {
     return { tone: 'info', text };
   };
 
+  // Main engine: the browser decodes the frames, gifenc encodes them in a background worker.
+  const viaBrowser = async (file, onProgress, name) => {
+    const video = await openVideo(file);
+    try {
+      const end = video.duration ? Math.min(startSec + lenSec, video.duration) : startSec + lenSec;
+      if (startSec >= end) throw new Error('The start is past the end of this video. Choose an earlier start.');
+      const rate = Number(fps);
+      const count = Math.max(1, Math.floor((end - startSec) * rate + 1e-6));
+      const times = Array.from({ length: count }, (_, i) => startSec + i / rate);
+      const { width: w, height: h } = fitWidth(video.width, video.height, Number(width));
+      const encoder = createGifEncoder({ width: w, height: h, dither: true, lossy: 100 });
+      try {
+        let pending = null;
+        let i = 0;
+        for await (const rgba of video.frames(times, w, h)) {
+          await pending; // the next frame is decoded while the last one is encoded
+          pending = encoder.add(rgba, delayFor(i, rate));
+          i += 1;
+          onProgress((i / count) * 97);
+        }
+        await pending;
+        return { blob: await encoder.finish(), name };
+      } catch (err) {
+        encoder.cancel();
+        throw err;
+      }
+    } finally {
+      video.close();
+    }
+  };
+
   const processFile = async (file, onProgress, info) => {
+    if (info && info.ok && info.isVideo === false) throw new Error('This file has no picture. Choose a video file instead.');
+    if (info && info.ok && info.duration && startSec >= info.duration) throw new Error('The start is past the end of this video. Choose an earlier start.');
+    const name = `${file.name.replace(/\.[^.]+$/, '') || file.name}.gif`;
+    try {
+      return await viaBrowser(file, onProgress, name);
+    } catch (err) {
+      // Formats the browser can't play (some AVI/MKV) still work through ffmpeg.
+      if (err.message !== 'decode' && err.message !== 'timeout') throw err;
+      return viaFfmpeg(file, onProgress, info, name);
+    }
+  };
+
+  const viaFfmpeg = async (file, onProgress, info, name) => {
     const ffmpeg = await getFFmpeg();
     const id = Math.random().toString(36).slice(2, 9);
     const inputExt = file.name.includes('.') ? file.name.split('.').pop() : 'mp4';
@@ -56,8 +101,6 @@ export default function VideoToGif() {
     const outputName = `output_${id}.gif`;
     let progressHandler = null;
     try {
-      if (info && info.ok && info.isVideo === false) throw new Error('This file has no picture. Choose a video file instead.');
-      if (info && info.ok && info.duration && startSec >= info.duration) throw new Error('The start is past the end of this video. Choose an earlier start.');
       await ffmpeg.writeFile(inputName, await fetchFile(file));
       progressHandler = ({ progress }) => onProgress(Math.min(100, Math.max(0, progress * 100)));
       ffmpeg.on('progress', progressHandler);
@@ -75,8 +118,7 @@ export default function VideoToGif() {
 
       const data = await ffmpeg.readFile(outputName);
       if (!data || data.length === 0) throw new Error('Could not make a GIF from this video. Try a different file.');
-      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
-      return { blob: new Blob([data.buffer], { type: 'image/gif' }), name: `${baseName}.gif` };
+      return { blob: new Blob([data.buffer], { type: 'image/gif' }), name };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
@@ -124,7 +166,7 @@ export default function VideoToGif() {
         { q: 'Why is my GIF so big?', a: 'GIF is an old format and stores every picture in full. Choose a smaller size, a shorter clip or less smoothness to shrink it. The note under each video gives a rough size before you start.' },
         { q: 'Why is there a 15 second limit?', a: 'A long GIF can easily reach tens of megabytes and may be slow or impossible to share. For longer clips, an MP4 video is a much better choice.' },
         { q: 'Does the GIF have sound?', a: 'No. GIFs cannot carry sound. Only the picture is kept.' },
-        { q: 'Why does it take a while?', a: 'The GIF is made inside your browser, on your own computer, which is slower than a video app. Nothing is uploaded.' },
+        { q: 'Why does it take a while?', a: 'The GIF is made inside your browser, on your own computer. Most clips take a few seconds. Nothing is uploaded.' },
       ]}
     />
   );
