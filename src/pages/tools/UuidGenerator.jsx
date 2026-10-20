@@ -1,110 +1,141 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useRef, useId } from 'react';
+import { Copy, Download } from 'lucide-react';
+import ToolFrame from '../../ui/ToolFrame';
+import { Button, Card } from '../../ui/controls';
+
+const FAQS = [
+  { q: 'What is a UUID?', a: 'A UUID is a long random ID, like 3b241101-e2bb-4255-8caf-4136c566a962. It is used to give things (users, orders, files) a name that nobody else will ever pick.' },
+  { q: 'Could two of them be the same?', a: 'In practice, no. The chance is so tiny it can be ignored, even if you make billions.' },
+  { q: 'Which version is this?', a: 'Version 4, the random kind. It is the most common one for databases and apps.' },
+  { q: 'Are they sent anywhere?', a: 'No. They are made in your browser and are not saved or uploaded.' },
+];
+
+function uuidV4() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const b = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+function build(count, upper, noDashes) {
+  const list = [];
+  for (let i = 0; i < count; i++) {
+    let id = uuidV4();
+    if (noDashes) id = id.replace(/-/g, '');
+    list.push(upper ? id.toUpperCase() : id);
+  }
+  return list;
+}
 
 export default function UuidGenerator() {
-  const [uuids, setUuids] = useState([]);
-  const [count, setCount] = useState(5);
+  const [count, setCount] = useState('5');
+  const [upper, setUpper] = useState(false);
+  const [noDashes, setNoDashes] = useState(false);
+  const [ids, setIds] = useState(() => build(1, false, false));
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [note, setNote] = useState('');
+  const timer = useRef(null);
+  const countId = useId();
 
-  const generateUUID = () => {
-    // Generate UUID v4
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  };
-
-  const handleGenerate = () => {
-    const newUuids = [];
-    const num = Math.min(Math.max(1, count), 100);
-    for (let i = 0; i < num; i++) {
-      newUuids.push(generateUUID());
+  const generate = () => {
+    const n = Number(count);
+    if (!Number.isInteger(n) || n < 1 || n > 1000) {
+      setError('Please enter a whole number from 1 to 1000.');
+      return;
     }
-    setUuids(newUuids);
+    setError('');
+    setIds(build(n, upper, noDashes));
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(uuids.join('\n'));
+  // Changing a format option re-formats what is already shown, so the list never goes stale.
+  const reformat = (nextUpper, nextNoDashes) => {
+    setIds((list) => list.map((id) => {
+      const base = id.toLowerCase();
+      const dashed = nextNoDashes ? base.replace(/-/g, '') : (base.includes('-') ? base : `${base.slice(0, 8)}-${base.slice(8, 12)}-${base.slice(12, 16)}-${base.slice(16, 20)}-${base.slice(20)}`);
+      return nextUpper ? dashed.toUpperCase() : dashed;
+    }));
+  };
+
+  const text = ids.join('\n');
+
+  const copyAll = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNote('');
+      setCopied(true);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setNote('Your browser blocked copying. Select the list and press Ctrl+C instead.');
+    }
+  };
+
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([`${text}\n`], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'uuids.txt';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
-    <div className="min-h-screen bg-[#030712] relative overflow-hidden">
-      
-      {/* BACKGROUND MESH */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-sky-500/10 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-[120px]"></div>
-      </div>
-
-      <div className="relative z-10 mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-12 md:py-20">
-        
-        {/* BACK LINK */}
-        <Link 
-          to="/all-tools?cat=utilities" 
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition-colors mb-8 group"
-        >
-          <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center group-hover:bg-white/10 transition-colors">
-            <i className="fa-solid fa-arrow-left text-xs"></i>
-          </div>
-          Back to Utilities
-        </Link>
-
-        {/* HEADER */}
-        <div className="mb-12">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-slate-900 border border-white/10 shadow-glass-inset mb-6">
-            <i className="fa-solid fa-fingerprint text-xl text-sky-400"></i>
-          </div>
-          <h1 className="text-3xl md:text-4xl font-bold font-sora text-white mb-4 tracking-tight">
-            UUID / GUID Generator
-          </h1>
-          <p className="text-slate-400 text-lg max-w-2xl leading-relaxed">
-            Generate random, secure Version 4 UUIDs instantly in bulk. All generated locally in your browser.
-          </p>
-        </div>
-
-        {/* TOOL CONTENT */}
-        <div className="space-y-6 max-w-2xl">
-          
-          <div className="bg-slate-900/50 rounded-2xl p-6 border border-white/5 space-y-4">
-            <label className="block text-sm font-semibold text-slate-300">How many UUIDs?</label>
-            <div className="flex gap-4">
-              <input 
+    <ToolFrame
+      path="/tools/uuid-generator"
+      name="UUID Generator"
+      title="Make random unique IDs (UUIDs)"
+      intro="Choose how many you need, press Generate, then copy the list or save it as a text file."
+      faqs={FAQS}
+    >
+      <div className="space-y-6">
+        <Card className="space-y-4">
+          <h2 className="text-lg font-bold">Settings</h2>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1">
+              <label htmlFor={countId} className="text-sm font-semibold text-ink">How many (1 to 1000)</label>
+              <input
+                id={countId}
                 type="number"
+                min={1}
+                max={1000}
                 value={count}
-                onChange={(e) => setCount(parseInt(e.target.value) || 1)}
-                min="1"
-                max="100"
-                className="bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-sky-500/50 w-32"
+                onChange={(e) => setCount(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') generate(); }}
+                className="block w-32 rounded-lg border border-line-strong bg-cream px-3 py-2 text-[15px] text-ink focus:outline focus:outline-3 focus:outline-wine"
               />
-              <button 
-                onClick={handleGenerate} 
-                className="flex-1 btn-primary-glow inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold rounded-xl"
-              >
-                <i className="fa-solid fa-bolt mr-2"></i> Generate
-              </button>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-cream px-4 py-2.5 text-[15px] text-ink">
+              <input type="checkbox" checked={upper} onChange={(e) => { setUpper(e.target.checked); reformat(e.target.checked, noDashes); }} className="size-4 accent-[var(--color-wine)]" />
+              Capital letters
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-cream px-4 py-2.5 text-[15px] text-ink">
+              <input type="checkbox" checked={noDashes} onChange={(e) => { setNoDashes(e.target.checked); reformat(upper, e.target.checked); }} className="size-4 accent-[var(--color-wine)]" />
+              No dashes
+            </label>
+            <Button onClick={generate}>Generate</Button>
+          </div>
+          {error && <p className="rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">{error}</p>}
+        </Card>
+
+        <Card className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-bold">Your IDs ({ids.length})</h2>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={copyAll}>
+                <Copy size={18} aria-hidden="true" />{copied ? 'Copied' : 'Copy all'}
+              </Button>
+              <Button variant="secondary" onClick={download}>
+                <Download size={18} aria-hidden="true" />Save as .txt
+              </Button>
             </div>
           </div>
-
-          {uuids.length > 0 && (
-            <div className="bg-slate-900/50 rounded-2xl p-6 border border-white/5 space-y-4 relative">
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-semibold text-slate-300">Generated UUIDs ({uuids.length})</label>
-                <button 
-                  onClick={handleCopy} 
-                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-white/5 hover:bg-white/10 text-white border border-white/10 transition-colors"
-                >
-                  <i className="fa-regular fa-copy mr-2"></i> Copy All
-                </button>
-              </div>
-              
-              <div className="w-full h-[250px] rounded-xl bg-slate-950/80 border border-white/5 p-4 text-sm text-sky-400/90 font-mono overflow-y-auto overscroll-contain whitespace-pre-wrap leading-relaxed">
-                {uuids.join('\n')}
-              </div>
-            </div>
-          )}
-        </div>
-
+          {note && <p className="rounded-lg bg-sand px-4 py-3 text-sm text-ink" role="status">{note}</p>}
+          <div className="max-h-80 overflow-y-auto whitespace-pre rounded-lg bg-cream p-4 font-mono text-sm text-ink select-all overflow-x-auto" tabIndex={0} aria-label="Generated UUIDs">{text}</div>
+        </Card>
       </div>
-    </div>
+    </ToolFrame>
   );
 }

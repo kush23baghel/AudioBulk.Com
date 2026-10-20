@@ -1,165 +1,149 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useMemo, useId } from 'react';
+import ToolFrame from '../../ui/ToolFrame';
+import { Button, Card } from '../../ui/controls';
+
+const FAQS = [
+  { q: 'How are words counted?', a: 'Anything separated by spaces or new lines counts as one word. So "well-known" is one word and "well known" is two.' },
+  { q: 'How is reading time worked out?', a: 'We assume an adult reads about 238 words a minute and speaks about 150 words a minute. Your own pace may be faster or slower.' },
+  { q: 'What are the top keywords?', a: 'The words you use most often, leaving out very common little words like "the" and "and". It helps you spot repeated words.' },
+  { q: 'Is my text sent anywhere?', a: 'No. The counting happens in your browser and your text never leaves your device.' },
+];
+
+const STOP = new Set('the a an and or but if so of to in on at for with by from as is are was were be been it its this that these those i you he she we they them his her our your my me not no do does did have has had will would can could should than then there here what which who whom about into over also just very more most such'.split(' '));
+
+const LIMITS = [
+  { label: 'X (Twitter) post', max: 280 },
+  { label: 'Instagram caption', max: 2200 },
+  { label: 'Meta description (Google)', max: 160 },
+];
+
+function analyse(text) {
+  const words = text.match(/\S+/g) || [];
+  const sentences = text.split(/[.!?]+(?:\s|$)/).filter((s) => /\S/.test(s)).length;
+  const paragraphs = text.split(/\n\s*\n/).filter((p) => /\S/.test(p)).length;
+  const freq = new Map();
+  for (const raw of text.toLowerCase().match(/[\p{L}\p{N}']+/gu) || []) {
+    const w = raw.replace(/^'+|'+$/g, '');
+    if (w.length < 3 || STOP.has(w)) continue;
+    freq.set(w, (freq.get(w) || 0) + 1);
+  }
+  const keywords = [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
+  return {
+    words: words.length,
+    chars: text.length,
+    charsNoSpaces: text.replace(/\s/g, '').length,
+    sentences,
+    paragraphs,
+    keywords,
+  };
+}
+
+function minutes(words, wpm) {
+  if (words === 0) return '0 sec';
+  const secs = Math.max(1, Math.round((words / wpm) * 60));
+  if (secs < 60) return `${secs} sec`;
+  const m = Math.floor(secs / 60);
+  return `${m} min ${secs % 60} sec`;
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="rounded-xl bg-cream px-4 py-3">
+      <p className="text-sm text-muted">{label}</p>
+      <span className="text-2xl font-extrabold text-ink">{value}</span>
+    </div>
+  );
+}
 
 export default function WordCounter() {
   const [text, setText] = useState('');
-  const [debouncedText, setDebouncedText] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const id = useId();
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedText(text), 400); // 400ms debounce
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setDebounced(text), 400);
+    return () => clearTimeout(t);
   }, [text]);
 
-  // Derived, not stored: we're "calculating" exactly while the debounce is pending.
-  const isCalculating = text !== debouncedText;
-
-  const charCountWithSpaces = debouncedText.length;
-  const charCountWithoutSpaces = debouncedText.replace(/\s/g, '').length;
-  
-  const wordsArray = debouncedText.trim().split(/\s+/).filter(w => w.length > 0);
-  const wordCount = wordsArray.length;
-
-  const sentences = debouncedText.split(/[.!?]+/).filter(s => s.trim().length > 0).length;
-  const paragraphs = debouncedText.split(/\n+/).filter(p => p.trim().length > 0).length;
-
-  // Reading time (average 225 WPM)
-  const readingTime = Math.ceil(wordCount / 225);
-  // Speaking time (average 150 WPM)
-  const speakingTime = Math.ceil(wordCount / 150);
-
-  // Character density calculation
-  const getDensity = () => {
-    const freq = {};
-    const cleanText = debouncedText.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const char of cleanText) {
-      freq[char] = (freq[char] || 0) + 1;
-    }
-    return Object.entries(freq)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-  };
-
-  const densities = getDensity();
+  const s = useMemo(() => analyse(debounced), [debounced]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 space-y-10">
-      {/* Breadcrumbs */}
-      <div className="text-sm breadcrumbs text-slate-400">
-        <ul>
-          <li><Link to="/" className="hover:text-white transition-colors">Home</Link></li>
-          <li><Link to="/all-tools" className="hover:text-white transition-colors">Utilities</Link></li>
-          <li className="text-sky-600 font-medium">Word Counter</li>
-        </ul>
-      </div>
-
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-white/10 pb-8">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 border border-sky-200 text-sky-600">
-          <i className="fa-solid fa-hashtag text-lg"></i>
-        </div>
-        <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight font-outfit">Word & Character Counter</h1>
-          <p className="text-slate-400 text-sm">Analyze word densities, speaking/reading times, and character lengths in real-time.</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Text Input */}
-        <div className="lg:col-span-2 space-y-4">
+    <ToolFrame
+      path="/tools/word-counter"
+      name="Word & Character Counter"
+      title="Count the words and letters in your text"
+      intro="Paste or type your text. You will see the counts, how long it takes to read, and whether it fits on social media."
+      faqs={FAQS}
+    >
+      <div className="space-y-6">
+        <Card className="space-y-3">
+          <label htmlFor={id} className="text-lg font-bold">Your text</label>
           <textarea
+            id={id}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Type or paste your text here to analyze..."
-            className="w-full h-80 p-6 rounded-3xl bg-[#0b1426]/80 backdrop-blur-md border border-white/10 text-slate-200 placeholder:text-slate-500 shadow-inner focus:outline-none focus:border-sky-500/50 focus:ring-2 focus:ring-sky-500/20 transition-all font-sans text-lg leading-relaxed resize-none custom-scrollbar"
+            rows={9}
+            placeholder="Paste or type your text here..."
+            className="block w-full rounded-lg border border-line-strong bg-cream px-3 py-2 text-[15px] text-ink focus:outline focus:outline-3 focus:outline-wine"
           />
-          <div className="flex justify-between items-center text-xs text-slate-400 px-2">
-            <span className="flex items-center gap-2">
-              Runs locally on your browser 
-              {isCalculating && <span className="loading loading-spinner loading-xs text-sky-500"></span>}
-            </span>
-            <button
-              onClick={() => setText('')}
-              className="text-slate-400 hover:text-white font-medium transition-colors"
-            >
-              Clear Text
-            </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="secondary" disabled={!text} onClick={() => setText('')}>Clear text</Button>
+            {!text && <p className="text-sm text-muted">Paste some text above to see the counts.</p>}
           </div>
-        </div>
+        </Card>
 
-        {/* Right Column: Statistics */}
-        <div className="space-y-6">
-          <div className="glass-card rounded-3xl p-6 border border-white/10 space-y-5 shadow-2xl relative">
-            {isCalculating && (
-              <div className="absolute inset-0 z-10 bg-[#0b1426]/50 backdrop-blur-sm rounded-3xl flex items-center justify-center">
-                 <span className="loading loading-spinner loading-md text-sky-500"></span>
-              </div>
-            )}
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider border-b border-white/10 pb-3 font-outfit flex items-center gap-2">
-              <i className="fa-solid fa-chart-pie text-sky-500"></i> Metrics Dashboard
-            </h3>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-[#0b1426]/60 rounded-2xl p-4 border border-white/5 text-center shadow-inner">
-                <span className="block text-[10px] uppercase font-bold text-slate-500 font-outfit mb-1">Words</span>
-                <span className="text-3xl font-bold text-sky-400 font-outfit">{wordCount}</span>
-              </div>
-              <div className="bg-[#0b1426]/60 rounded-2xl p-4 border border-white/5 text-center shadow-inner">
-                <span className="block text-[10px] uppercase font-bold text-slate-500 font-outfit mb-1">Characters</span>
-                <span className="text-3xl font-bold text-purple-400 font-outfit">{charCountWithSpaces}</span>
-              </div>
-              <div className="bg-[#0b1426]/60 rounded-2xl p-4 border border-white/5 text-center shadow-inner">
-                <span className="block text-[10px] uppercase font-bold text-slate-500 font-outfit mb-1">No Spaces</span>
-                <span className="text-xl font-bold text-slate-300 font-outfit mt-1 block">{charCountWithoutSpaces}</span>
-              </div>
-              <div className="bg-[#0b1426]/60 rounded-2xl p-4 border border-white/5 text-center shadow-inner">
-                <span className="block text-[10px] uppercase font-bold text-slate-500 font-outfit mb-1">Sentences</span>
-                <span className="text-xl font-bold text-slate-300 font-outfit mt-1 block">{sentences}</span>
-              </div>
-            </div>
+        <Card className="space-y-4">
+          <h2 className="text-lg font-bold">The counts</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Stat label="Words" value={s.words} />
+            <Stat label="Characters" value={s.chars} />
+            <Stat label="Characters (no spaces)" value={s.charsNoSpaces} />
+            <Stat label="Sentences" value={s.sentences} />
+            <Stat label="Paragraphs" value={s.paragraphs} />
+            <Stat label="Reading time" value={minutes(s.words, 238)} />
+            <Stat label="Speaking time" value={minutes(s.words, 150)} />
+          </div>
+        </Card>
 
-            {/* Time Estimates */}
-            <div className="space-y-3 pt-3 border-t border-white/10">
-              <div className="flex justify-between text-xs text-slate-400">
-                <span><i className="fa-regular fa-eye mr-1.5 text-sky-600"></i> Reading Time</span>
-                <span className="font-semibold text-slate-100">{readingTime} min</span>
-              </div>
-              <div className="flex justify-between text-xs text-slate-400">
-                <span><i className="fa-regular fa-comment mr-1.5 text-purple-600"></i> Speaking Time</span>
-                <span className="font-semibold text-slate-100">{speakingTime} min</span>
-              </div>
-              <div className="flex justify-between text-xs text-slate-400">
-                <span><i className="fa-solid fa-indent mr-1.5 text-pink-600"></i> Paragraphs</span>
-                <span className="font-semibold text-slate-100">{paragraphs}</span>
-              </div>
-            </div>
-
-            {/* Density list */}
-            {densities.length > 0 && (
-              <div className="space-y-2 pt-3 border-t border-white/10">
-                <span className="block text-[10px] uppercase font-bold text-slate-400 font-outfit">
-                  Top Character Density
-                </span>
-                <div className="space-y-1.5">
-                  {densities.map(([char, count]) => {
-                    const pct = Math.round((count / charCountWithoutSpaces) * 100);
-                    return (
-                      <div key={char} className="flex items-center justify-between text-xs">
-                        <span className="font-mono uppercase text-slate-300">{char}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 bg-white/5 rounded-full h-1.5 overflow-hidden">
-                            <div className="bg-sky-400 h-full" style={{ width: `${pct}%` }}></div>
-                          </div>
-                          <span className="text-slate-400 text-[10px] font-bold">{count} ({pct}%)</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+        <Card className="space-y-4">
+          <h2 className="text-lg font-bold">Does it fit?</h2>
+          <div className="space-y-4">
+            {LIMITS.map((l) => {
+              const over = s.chars > l.max;
+              const pct = Math.min(100, (s.chars / l.max) * 100);
+              return (
+                <div key={l.label} className="space-y-1.5">
+                  <div className="flex flex-wrap justify-between gap-2 text-sm">
+                    <span className="font-semibold text-ink">{l.label}</span>
+                    <span className={over ? 'font-semibold text-bad' : 'text-muted'}>
+                      {s.chars.toLocaleString()} of {l.max.toLocaleString()}
+                      {over ? ` (${(s.chars - l.max).toLocaleString()} too many)` : ''}
+                    </span>
+                  </div>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-sunken" role="img" aria-label={`${l.label}: ${Math.round(pct)} percent of the limit used`}>
+                    <div className={`h-full rounded-full ${over ? 'bg-bad' : 'bg-wine'}`} style={{ width: `${pct}%` }} />
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })}
           </div>
-        </div>
+        </Card>
+
+        <Card className="space-y-3">
+          <h2 className="text-lg font-bold">Words you use most</h2>
+          {s.keywords.length === 0 ? (
+            <p className="text-sm text-muted">Nothing to show yet. Add some text with a few longer words.</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {s.keywords.map(([w, n]) => (
+                <li key={w} className="rounded-full border border-line bg-cream px-3 py-1 text-sm text-ink">
+                  {w} <span className="font-semibold text-wine">{n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       </div>
-    </div>
+    </ToolFrame>
   );
 }

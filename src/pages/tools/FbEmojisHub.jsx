@@ -1,81 +1,121 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useRef, useId } from 'react';
+import { Copy, Eraser } from 'lucide-react';
+import ToolFrame from '../../ui/ToolFrame';
+import { Button, Card } from '../../ui/controls';
+
+const FAQS = [
+  {
+    q: 'How do I use these?',
+    a: 'Click an emoji. It is copied, and also added to the box at the bottom where you can build a line of text. Then paste it into your Facebook post or ad.',
+  },
+  {
+    q: 'Do emojis really help ads?',
+    a: 'Sometimes. One or two can make a line easier to spot and scan. Too many look messy and can feel spammy. Test with and without.',
+  },
+  {
+    q: 'Will they look the same for everyone?',
+    a: 'No. Each phone and computer draws emojis in its own style. The meaning stays the same, but the look changes a little.',
+  },
+  {
+    q: 'Why is nothing copied?',
+    a: 'Some browsers block copying. If that happens, the emoji still goes into the box below, so you can select it there and copy by hand.',
+  },
+];
+
+const GROUPS = [
+  { name: 'Urgency', emojis: ['⏰', '⌛', '🔥', '⚡', '🚨', '❗', '‼️', '⏳', '📢', '🏃'] },
+  { name: 'Money and deals', emojis: ['💰', '💵', '💸', '🏷️', '🎁', '🛍️', '🛒', '💲', '🤑', '🆓', '💯', '🎉'] },
+  { name: 'Social proof', emojis: ['⭐', '🌟', '👍', '❤️', '🏆', '🥇', '👏', '🙌', '💬', '✅', '✔️', '🗣️'] },
+  { name: 'Arrows and pointers', emojis: ['👉', '👇', '👆', '👈', '➡️', '⬇️', '⬆️', '↪️', '▶️', '🔽', '🔗', '📍'] },
+  { name: 'Happy and friendly', emojis: ['😀', '😊', '😍', '🥰', '😎', '🤩', '😉', '🙂', '🤗', '👋', '🙏', '💪'] },
+  { name: 'Business and tips', emojis: ['📦', '🚚', '📅', '🔔', '📣', '💡', '📈', '🎯', '🔒', '📲', '✨', '🆕'] },
+];
 
 export default function FbEmojisHub() {
-  const [toast, setToast] = useState(null);
+  const [text, setText] = useState('');
+  const [note, setNote] = useState('');
+  const boxRef = useRef(null);
+  const boxId = useId();
+  const timer = useRef(null);
 
-  const emojiCategories = {
-    'Arrows & Pointers': ['👉', '👇', '👈', '👆', '➡️', '⬇️', '▶️', '⏩', '↪️', '🎯', '📍', '📌'],
-    'Checkmarks & Approval': ['✅', '✔️', '☑️', '💯', '👍', '👏', '🙌', '🏆', '⭐', '🌟', '✨'],
-    'Urgency & Attention': ['🔥', '🚨', '⚡', '⏰', '⏳', '📢', '🚀', '💥', '⚠️', '❗', '🛑', '🏃‍♂️'],
-    'Faces & Expressions': ['😍', '😲', '😎', '🤔', '🤯', '🤫', '🤩', '🤑', '🥳', '😉', '🥰', '😅'],
-    'Commerce & Sales': ['🛒', '🛍️', '💸', '💰', '💳', '💎', '🎁', '📦', '🚚', '🏷️', '📈', '📊']
+  const flash = (message) => {
+    setNote(message);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setNote(''), 2500);
   };
 
-  const handleCopy = (emoji) => {
-    navigator.clipboard.writeText(emoji);
-    setToast(`Copied ${emoji} to clipboard!`);
-    setTimeout(() => setToast(null), 2000);
+  const copyText = async (value, message) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      flash(message);
+    } catch {
+      flash('Copying is blocked here. Select the text in the box and copy it by hand.');
+    }
+  };
+
+  const pick = (emoji) => {
+    const box = boxRef.current;
+    const start = box ? box.selectionStart ?? text.length : text.length;
+    const end = box ? box.selectionEnd ?? text.length : text.length;
+    const next = text.slice(0, start) + emoji + text.slice(end);
+    setText(next);
+    copyText(emoji, `Copied ${emoji}`);
+    requestAnimationFrame(() => {
+      if (box) { box.focus(); box.setSelectionRange(start + emoji.length, start + emoji.length); }
+    });
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 space-y-10 relative">
-      {/* Toast Notification */}
-      {toast && (
-        <div className="toast toast-top toast-center z-50">
-          <div className="alert alert-success bg-emerald-500 text-white border-none shadow-lg">
-            <span>{toast}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="text-sm breadcrumbs text-slate-400">
-        <ul>
-          <li><Link to="/" className="hover:text-white transition-colors">Home</Link></li>
-          <li><Link to="/all-tools" className="hover:text-white transition-colors">Tools</Link></li>
-          <li className="text-sky-600 font-medium">FB Emojis Hub</li>
-        </ul>
-      </div>
-
-      <div className="flex items-center gap-3 border-b border-white/10 pb-8">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 border border-sky-200 text-sky-600">
-          <i className="fa-solid fa-face-smile-wink text-lg"></i>
-        </div>
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">FB Emojis Hub</h1>
-          <p className="text-slate-400 text-sm">One-click copy the most effective emojis for Facebook & Instagram ads.</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {Object.entries(emojiCategories).map(([category, emojis]) => (
-          <div key={category} className="glass-card p-6 rounded-2xl border border-white/10">
-            <h2 className="text-lg font-semibold text-white mb-4">{category}</h2>
-            <div className="grid grid-cols-6 gap-3">
-              {emojis.map((emoji, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleCopy(emoji)}
-                  className="h-12 text-2xl flex items-center justify-center bg-white/5 hover:bg-sky-500/20 hover:scale-110 border border-white/10 rounded-xl transition-all duration-200"
-                  title="Click to copy"
-                >
-                  {emoji}
-                </button>
-              ))}
+    <ToolFrame
+      path="/tools/fb-emojis-hub"
+      name="Facebook Emoji Picker"
+      title="Copy emojis that work well in Facebook posts and ads"
+      intro="Click any emoji to copy it. It is also added to the box at the bottom, so you can build a line of text and copy the whole thing."
+      faqs={FAQS}
+    >
+      <div className="space-y-6">
+        <Card className="space-y-5">
+          <h2 className="text-lg font-bold"><span className="mr-2 text-wine">1</span>Pick emojis</h2>
+          {GROUPS.map((g) => (
+            <div key={g.name} className="space-y-2">
+              <h3 className="text-sm font-semibold text-ink">{g.name}</h3>
+              <div className="flex flex-wrap gap-2">
+                {g.emojis.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    aria-label={`Copy ${e}`}
+                    onClick={() => pick(e)}
+                    className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-paper text-2xl hover:bg-sand focus-visible:outline focus-visible:outline-3 focus-visible:outline-wine"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
             </div>
+          ))}
+        </Card>
+
+        <Card className="space-y-4">
+          <h2 className="text-lg font-bold"><span className="mr-2 text-wine">2</span>Build your line</h2>
+          <label htmlFor={boxId} className="sr-only">Your line of text</label>
+          <textarea
+            id={boxId}
+            ref={boxRef}
+            rows={4}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Type here, then click emojis to add them. Example: 🔥 Flash sale ends tonight 👉"
+            className="block w-full rounded-lg border border-line-strong bg-cream px-3 py-2 text-[15px] text-ink focus:outline focus:outline-3 focus:outline-wine"
+          />
+          <div className="flex flex-wrap gap-3">
+            <Button disabled={!text} onClick={() => copyText(text, 'Copied your line')}><Copy size={18} aria-hidden="true" />Copy line</Button>
+            <Button variant="secondary" disabled={!text} onClick={() => setText('')}><Eraser size={18} aria-hidden="true" />Clear</Button>
           </div>
-        ))}
+          <p className="min-h-5 text-sm font-semibold text-ok" role="status">{note}</p>
+          <p className="text-sm text-muted">Tip: one to three emojis in a line is plenty.</p>
+        </Card>
       </div>
-      
-      <div className="glass-card p-6 rounded-2xl border border-white/10 bg-sky-500/5">
-        <h3 className="text-lg font-semibold text-white mb-2"><i className="fa-solid fa-lightbulb text-sky-600 mr-2"></i>Best Practices</h3>
-        <ul className="list-disc list-inside text-slate-300 space-y-2 text-sm">
-          <li>Use <strong>Arrows</strong> to direct attention to your CTA link.</li>
-          <li>Use <strong>Checkmarks</strong> for bulleted lists of benefits.</li>
-          <li>Use <strong>Urgency</strong> emojis for limited-time offers or flash sales.</li>
-          <li>Don't overuse emojis. 2-3 per ad text is usually optimal.</li>
-        </ul>
-      </div>
-    </div>
+    </ToolFrame>
   );
 }

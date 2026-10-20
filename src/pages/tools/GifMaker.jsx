@@ -1,120 +1,314 @@
-import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
+import { useState, useRef, useEffect, useId } from 'react';
+import { ArrowUp, ArrowDown, X, Download, UploadCloud, Film } from 'lucide-react';
+import ToolFrame from '../../ui/ToolFrame';
+import { Button, Card, ChoiceChips } from '../../ui/controls';
 import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { formatBytes } from '../../lib/gifInfo';
+
+const MAX_PICTURES = 60;
+const SECONDS = [
+  { value: '0.3', label: '0.3 s', hint: 'Fast, like a flip book' },
+  { value: '0.5', label: '0.5 s' },
+  { value: '1', label: '1 s', hint: 'A slideshow' },
+  { value: '2', label: '2 s' },
+];
+const WIDTHS = [
+  { value: '320', label: 'Small (320)', hint: 'Small file' },
+  { value: '480', label: 'Medium (480)', hint: 'A good balance' },
+  { value: '640', label: 'Large (640)', hint: 'Sharper, bigger file' },
+];
+const LOOPS = [
+  { value: 'forever', label: 'Loop forever', hint: 'The GIF starts again when it ends.' },
+  { value: 'once', label: 'Play once', hint: 'The GIF stops on the last picture.' },
+];
+
+const FAQS = [
+  { q: 'What kinds of pictures can I use?', a: 'PNG, JPG and WebP pictures. You can add many at once and drag more in later.' },
+  { q: 'What if my pictures are different shapes?', a: 'The first picture sets the shape of the GIF. Other pictures are fitted inside it with white space around them, so nothing is cut off.' },
+  { q: 'How do I change the order?', a: 'Use the up and down arrows next to each picture. The GIF plays from the top of the list to the bottom.' },
+  { q: 'Why is the GIF so big?', a: 'GIFs store every picture in full. Use fewer pictures, a smaller width, or a shorter time on each picture to make it smaller.' },
+];
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('A picture could not be read.'));
+    img.src = url;
+  });
+}
+
+const canvasToPng = (canvas) => new Promise((resolve, reject) => {
+  canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('A picture could not be prepared.'))), 'image/png');
+});
 
 export default function GifMaker() {
-  const [fps, setFps] = useState(10);
-  const [loop, setLoop] = useState(0); // 0 = infinite
-  const [width, setWidth] = useState(480);
-  const processor = useBulkProcessor();
+  const [items, setItems] = useState([]); // { id, file, url, w, h }
+  const [seconds, setSeconds] = useState('0.5');
+  const [width, setWidth] = useState('480');
+  const [loop, setLoop] = useState('forever');
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null); // { url, size }
+  const urlsRef = useRef([]);
+  const nextId = useRef(0);
+  const resultUrlRef = useRef('');
+  const inputId = useId();
 
-  // This tool receives image files and combines them into a GIF
-  const processFile = async (file, onProgress) => {
-    const ffmpeg = await getFFmpeg();
-    const uid = Math.random().toString(36).substring(7);
-    const ext = file.name.split('.').pop().toLowerCase();
-    const inputName = `input_${uid}.${ext}`;
-    const paletteName = `palette_${uid}.png`;
-    const outputName = `output_${uid}.gif`;
+  useEffect(() => () => {
+    urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
+  }, []);
 
-    let progressHandler = null;
-    try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
-    onProgress(20);
+  const clearResult = () => {
+    if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
+    resultUrlRef.current = '';
+    setResult(null);
+  };
 
-    // Scale filter
-    const scaleFilter = `fps=${fps},scale=${width}:-2:flags=lanczos`;
-
-    // Pass 1: palette
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-vf', `${scaleFilter},palettegen`,
-      paletteName
-    ]);
-    onProgress(60);
-      progressHandler = ({ progress }) => onProgress(60 + progress * 40);
-    ffmpeg.on('progress', progressHandler);
-
-    // Pass 2: GIF
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-i', paletteName,
-      '-filter_complex', `${scaleFilter}[x];[x][1:v]paletteuse`,
-      '-loop', String(loop),
-      outputName
-    ]);
-
-    const data = await ffmpeg.readFile(outputName);
-    const blob = new Blob([data.buffer], { type: 'image/gif' });
-    const baseName = file.name.replace(/\.[^.]+$/, '');
-    return { blob, name: `${baseName}.gif` };
-    } finally {
-      if (progressHandler) ffmpeg.off('progress', progressHandler);
-      await safeDelete(ffmpeg, inputName);
-      await safeDelete(ffmpeg, outputName);
-      await safeDelete(ffmpeg, paletteName);
+  const addFiles = async (fileList) => {
+    const picked = Array.from(fileList || []);
+    if (!picked.length) return;
+    const good = picked.filter((f) => /^image\/(png|jpe?g|webp)$/.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name));
+    setError(good.length < picked.length ? 'Some files were skipped. Only PNG, JPG and WebP pictures work here.' : '');
+    const room = MAX_PICTURES - items.length;
+    if (good.length > room) setError(`You can use up to ${MAX_PICTURES} pictures. The extra ones were skipped.`);
+    const added = [];
+    for (const file of good.slice(0, Math.max(0, room))) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = await loadImage(url);
+        urlsRef.current.push(url);
+        nextId.current += 1;
+        added.push({ id: `p${nextId.current}`, file, url, w: img.naturalWidth, h: img.naturalHeight });
+      } catch {
+        URL.revokeObjectURL(url);
+        setError(`"${file.name}" could not be read, so it was skipped.`);
+      }
+    }
+    if (added.length) {
+      clearResult();
+      setItems((prev) => [...prev, ...added]);
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Frame Rate: {fps} FPS</label>
-        <input
-          type="range" min={5} max={30} value={fps}
-          onChange={e => setFps(Number(e.target.value))}
-          className="range range-xs range-sky w-full"
-        />
-      </div>
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Width: {width}px</label>
-        <input
-          type="range" min={100} max={800} step={20} value={width}
-          onChange={e => setWidth(Number(e.target.value))}
-          className="range range-xs range-sky w-full"
-        />
-      </div>
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Loop Count</label>
-        {[
-          { label: 'Infinite Loop', value: 0 },
-          { label: 'Play Once', value: 1 },
-          { label: 'Loop 3 Times', value: 3 },
-        ].map(l => (
-          <button key={l.value} onClick={() => setLoop(l.value)}
-            className={`w-full btn btn-xs px-3 py-2 h-auto text-xs font-medium rounded-xl border ${
-              loop === l.value ? 'bg-sky-500 text-white border-sky-500' : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
-            }`}
-          >{l.label}</button>
-        ))}
-      </div>
-      <p className="text-[10px] text-slate-400">
-        Drop an image or short video clip to convert it into an animated GIF.
-      </p>
-    </div>
-  );
+  const move = (index, delta) => {
+    setItems((prev) => {
+      const next = [...prev];
+      const target = index + delta;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+    clearResult();
+  };
+
+  const remove = (id) => {
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    clearResult();
+  };
+
+  const clearAll = () => { setItems([]); clearResult(); setError(''); };
+
+  const first = items[0];
+  const outW = first ? Math.min(Number(width), first.w) : Number(width);
+  const evenOf = (n) => Math.max(2, Math.round(n / 2) * 2);
+  const frameW = evenOf(outW);
+  const frameH = first ? evenOf((first.h * outW) / first.w) : 0;
+  const total = items.length * Number(seconds);
+  const tooFew = items.length < 2;
+  const heavy = items.length > 30 || (frameW * frameH * items.length > 40_000_000);
+
+  const make = async () => {
+    if (busy || tooFew) return;
+    setBusy(true);
+    setError('');
+    setProgress(0);
+    clearResult();
+    nextId.current += 1;
+    const id = `m${nextId.current}`;
+    const names = items.map((_, i) => `img${id}_${String(i + 1).padStart(3, '0')}.png`);
+    const outputName = `output_${id}.gif`;
+    let ffmpeg = null;
+    let progressHandler = null;
+    try {
+      ffmpeg = await getFFmpeg();
+      // Every picture becomes a PNG of the same size, so the frames line up.
+      const canvas = document.createElement('canvas');
+      canvas.width = frameW;
+      canvas.height = frameH;
+      const ctx = canvas.getContext('2d');
+      for (let i = 0; i < items.length; i += 1) {
+        const img = await loadImage(items[i].url);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, frameW, frameH);
+        const scale = Math.min(frameW / img.naturalWidth, frameH / img.naturalHeight);
+        const dw = img.naturalWidth * scale;
+        const dh = img.naturalHeight * scale;
+        ctx.drawImage(img, (frameW - dw) / 2, (frameH - dh) / 2, dw, dh);
+        const png = await canvasToPng(canvas);
+        await ffmpeg.writeFile(names[i], new Uint8Array(await png.arrayBuffer()));
+        setProgress(Math.round(((i + 1) / items.length) * 30));
+      }
+      progressHandler = ({ progress: p }) => setProgress(30 + Math.max(0, Math.min(70, Math.round(p * 70))));
+      ffmpeg.on('progress', progressHandler);
+      const filter = '[0:v]split[a][b];[a]palettegen[p];[b][p]paletteuse';
+      await ffmpeg.exec([
+        '-framerate', String(1 / Number(seconds)),
+        '-i', `img${id}_%03d.png`,
+        '-filter_complex', filter,
+        '-loop', loop === 'forever' ? '0' : '-1',
+        outputName,
+      ]);
+      const data = await ffmpeg.readFile(outputName);
+      if (!data || data.length === 0) throw new Error('empty');
+      const blob = new Blob([data.buffer], { type: 'image/gif' });
+      const url = URL.createObjectURL(blob);
+      resultUrlRef.current = url;
+      setResult({ url, size: blob.size });
+    } catch {
+      setError('The GIF could not be made. Try fewer or smaller pictures, or different files.');
+    } finally {
+      if (ffmpeg && progressHandler) ffmpeg.off('progress', progressHandler);
+      if (ffmpeg) {
+        for (const n of names) await safeDelete(ffmpeg, n);
+        await safeDelete(ffmpeg, outputName);
+      }
+      setBusy(false);
+    }
+  };
+
+  const download = () => {
+    if (!result) return;
+    const a = document.createElement('a');
+    a.href = result.url;
+    a.download = 'my_pictures_audiobulk.gif';
+    a.click();
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    addFiles(e.dataTransfer.files);
+  };
 
   return (
-    <ToolPageLayout
-      title="GIF Maker"
-      description="Create animated GIFs from image sequences or short video clips. Supports PNG, JPG, WebP, and video input formats."
-      icon="fa-square-plus"
-      categoryName="GIF & Image Tools"
-      categoryPath="/all-tools?cat=gif-image"
-      acceptTypes={{
-        'image/*': ['.png', '.jpg', '.jpeg', '.webp'],
-        'video/*': ['.mp4', '.webm', '.mov', '.gif']
-      }}
-      optionsTitle="GIF Settings"
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
-      faqs={[
-        { q: 'Can I make a GIF from images?', a: 'Yes! Drop individual PNG/JPG frames and they will each be converted to GIF. For multi-frame GIFs from a sequence, use a video clip as input.' },
-        { q: 'Why is the GIF file large?', a: 'GIFs are inherently large. Lower the FPS and width to reduce file size significantly.' }
-      ]}
-    />
+    <ToolFrame
+      path="/tools/gif-maker"
+      name="GIF Maker"
+      title="Turn a set of pictures into an animated GIF"
+      intro="Add your pictures, put them in order, and choose how long each one shows. The GIF is made on your computer."
+      faqs={FAQS}
+    >
+      <div className="space-y-6">
+        <Card className="space-y-4">
+          <h2 className="text-lg font-bold"><span className="mr-2 text-wine">1</span>Add your pictures</h2>
+          <label
+            htmlFor={inputId}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            className={`flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-6 text-center transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-wine ${items.length ? 'py-6' : 'py-12'} ${
+              dragging ? 'border-wine bg-wine-soft' : 'border-line-strong bg-paper hover:bg-sand'
+            }`}
+          >
+            <UploadCloud size={items.length ? 24 : 34} className="text-wine" aria-hidden="true" />
+            <span className="font-bold text-ink">{items.length ? 'Add more pictures' : 'Drop pictures here, or click to choose them'}</span>
+            <span className="text-sm text-muted">PNG, JPG or WebP. Up to {MAX_PICTURES} pictures.</span>
+            <input
+              id={inputId}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+              className="sr-only"
+              disabled={busy}
+              onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
+            />
+          </label>
+          {items.length > 0 && (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-ink">{items.length} {items.length === 1 ? 'picture' : 'pictures'}, shown from top to bottom</p>
+                <Button variant="quiet" onClick={clearAll} disabled={busy}>Remove all</Button>
+              </div>
+              <ol className="space-y-2">
+                {items.map((it, i) => (
+                  <li key={it.id} className="flex items-center gap-3 rounded-xl border border-line bg-cream p-2">
+                    <span className="w-6 text-center text-sm font-semibold text-muted">{i + 1}</span>
+                    <img src={it.url} alt={`Picture ${i + 1}: ${it.file.name}`} className="h-14 w-14 shrink-0 rounded-lg bg-sunken object-cover" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink">{it.file.name}</span>
+                    <button type="button" onClick={() => move(i, -1)} disabled={busy || i === 0} aria-label={`Move ${it.file.name} up`} className="rounded-lg p-2 text-muted hover:bg-sand hover:text-ink disabled:opacity-30">
+                      <ArrowUp size={18} aria-hidden="true" />
+                    </button>
+                    <button type="button" onClick={() => move(i, 1)} disabled={busy || i === items.length - 1} aria-label={`Move ${it.file.name} down`} className="rounded-lg p-2 text-muted hover:bg-sand hover:text-ink disabled:opacity-30">
+                      <ArrowDown size={18} aria-hidden="true" />
+                    </button>
+                    <button type="button" onClick={() => remove(it.id)} disabled={busy} aria-label={`Remove ${it.file.name}`} className="rounded-lg p-2 text-muted hover:bg-bad-soft hover:text-bad disabled:opacity-30">
+                      <X size={18} aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+        </Card>
+
+        <Card className="space-y-5">
+          <h2 className="text-lg font-bold"><span className="mr-2 text-wine">2</span>Choose how it plays</h2>
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-ink">Time on each picture</p>
+            <ChoiceChips label="Seconds per picture" options={SECONDS} value={seconds} onChange={(v) => { setSeconds(v); clearResult(); }} />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-ink">Picture size</p>
+            <ChoiceChips label="Width" options={WIDTHS} value={width} onChange={(v) => { setWidth(v); clearResult(); }} />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-ink">When it ends</p>
+            <ChoiceChips label="Looping" options={LOOPS} value={loop} onChange={(v) => { setLoop(v); clearResult(); }} />
+          </div>
+        </Card>
+
+        <Card className="space-y-4">
+          <h2 className="text-lg font-bold"><span className="mr-2 text-wine">3</span>Make the GIF</h2>
+          {items.length === 0 && <p className="text-sm text-muted">Add at least two pictures first.</p>}
+          {items.length === 1 && <p className="rounded-lg bg-sand px-4 py-3 text-sm text-ink" role="status">Add one more picture. A GIF needs at least two.</p>}
+          {!tooFew && (
+            <p className="text-sm text-muted" role="status">
+              {items.length} pictures, {Number(total.toFixed(1))} seconds long, {frameW}×{frameH}.
+              {first && first.w < Number(width) ? ` Your first picture is only ${first.w} wide, so it will not be stretched.` : ''}
+            </p>
+          )}
+          {heavy && !tooFew && <p className="rounded-lg bg-sand px-4 py-3 text-sm text-ink">That is a lot of picture data, so it may take a while and the GIF may be big. Fewer pictures or a smaller size will help.</p>}
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={make} disabled={busy || tooFew}>
+              <Film size={18} aria-hidden="true" />
+              {busy ? 'Making GIF...' : 'Make GIF'}
+            </Button>
+          </div>
+          {busy && (
+            <div className="space-y-2" role="status">
+              <div className="h-2 overflow-hidden rounded-full bg-sunken">
+                <div className="h-full rounded-full bg-wine transition-[width] duration-200" style={{ width: `${progress}%` }} />
+              </div>
+              <p className="text-sm text-muted">Making your GIF... {progress}%</p>
+            </div>
+          )}
+          {error && <p className="rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">{error}</p>}
+          {result && (
+            <div className="space-y-3">
+              <img src={result.url} alt="Your finished GIF" className="max-h-[420px] max-w-full rounded-xl border border-line bg-sunken" />
+              <p className="text-sm text-muted">Your GIF is ready. File size {formatBytes(result.size)}.</p>
+              <Button onClick={download}>
+                <Download size={18} aria-hidden="true" />
+                Download
+              </Button>
+            </div>
+          )}
+        </Card>
+      </div>
+    </ToolFrame>
   );
 }

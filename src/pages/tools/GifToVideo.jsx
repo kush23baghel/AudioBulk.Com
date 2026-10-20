@@ -1,54 +1,54 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips } from '../../ui/controls';
+import { readGifInfo } from '../../lib/gifInfo';
+
+const LOOPS = [
+  { value: '1', label: 'Play once' },
+  { value: '3', label: 'Repeat 3 times' },
+  { value: '5', label: 'Repeat 5 times', hint: 'Handy when the GIF is very short and you want a longer video.' },
+];
 
 export default function GifToVideo() {
-  const [format, setFormat] = useState('mp4');
-  const processor = useBulkProcessor();
+  const [loops, setLoops] = useState('1');
 
-  const processFile = async (file, onProgress) => {
+  const inspect = (info) => {
+    if (!info) return null;
+    if (!info.ok) return { tone: 'warn', text: 'This does not look like a GIF your browser can read. It may be damaged.' };
+    const w = Math.floor(info.width / 2) * 2;
+    const h = Math.floor(info.height / 2) * 2;
+    const odd = w !== info.width || h !== info.height;
+    return { tone: 'info', text: `${info.width}×${info.height} GIF becomes an MP4${odd ? ` (${w}×${h}, trimmed by a pixel because videos need even sizes)` : ''}. It will have no sound, because GIFs have none.` };
+  };
+
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
-    const uid = Math.random().toString(36).substring(7);
-    const inputName = `input_${uid}.gif`;
-    const outputName = `output_${uid}.${format}`;
-
+    const id = Math.random().toString(36).slice(2, 9);
+    const inputName = `input_${id}.gif`;
+    const outputName = `output_${id}.mp4`;
     let progressHandler = null;
     try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
-      progressHandler = ({ progress }) => onProgress(progress * 100);
-    ffmpeg.on('progress', progressHandler);
+      if (info && !info.ok) throw new Error('This GIF could not be read. Try a different file.');
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
+      progressHandler = ({ progress }) => onProgress(Math.min(100, Math.max(0, progress * 100)));
+      ffmpeg.on('progress', progressHandler);
 
-    let args;
-    if (format === 'mp4') {
-      args = [
+      // -stream_loop N repeats the GIF N more times, so "play 3 times" means loop 2.
+      await ffmpeg.exec([
+        '-stream_loop', String(Number(loops) - 1),
         '-i', inputName,
-        '-movflags', 'faststart',
-        '-pix_fmt', 'yuv420p',
-        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', // ensure even dimensions
-        '-c:v', 'libx264',
-        '-crf', '18',
-        '-preset', 'veryfast',
-        outputName
-      ];
-    } else {
-      args = [
-        '-i', inputName,
-        '-c:v', 'libvpx',
-        '-b:v', '1M',
-        '-auto-alt-ref', '0',
-        outputName
-      ];
-    }
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart', '-an',
+        outputName,
+      ]);
 
-    await ffmpeg.exec(args);
-
-    const data = await ffmpeg.readFile(outputName);
-    const mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm';
-    const blob = new Blob([data.buffer], { type: mimeType });
-    const baseName = file.name.replace(/\.[^.]+$/, '');
-    return { blob, name: `${baseName}.${format}` };
+      const data = await ffmpeg.readFile(outputName);
+      if (!data || data.length === 0) throw new Error('Could not turn this GIF into a video. Try a different file.');
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      return { blob: new Blob([data.buffer], { type: 'video/mp4' }), name: `${baseName}.mp4` };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
@@ -56,47 +56,24 @@ export default function GifToVideo() {
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Output Format</label>
-        {['mp4', 'webm'].map(f => (
-          <button
-            key={f}
-            onClick={() => setFormat(f)}
-            className={`w-full btn btn-xs px-3 py-2.5 h-auto text-xs font-medium rounded-xl border ${
-              format === f
-                ? 'bg-sky-500 text-white border-sky-500'
-                : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            {f.toUpperCase()} {f === 'mp4' ? '(Most Compatible)' : '(Web Optimized)'}
-          </button>
-        ))}
-      </div>
-      <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/10 p-3">
-        <p className="text-[10px] text-emerald-600 leading-normal">
-          MP4 output uses H.264 with yuv420p pixel format for maximum device compatibility. CRF 18 = near-lossless quality.
-        </p>
-      </div>
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="GIF to Video Converter"
-      description="Convert animated GIFs into looping MP4 or WebM video files. MP4 output is compatible with all major platforms."
-      icon="fa-film"
-      categoryName="GIF & Image Tools"
-      categoryPath="/all-tools?cat=gif-image"
-      acceptTypes={{ 'image/gif': ['.gif'] }}
-      optionsTitle="Output Format"
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/gif-to-video"
+      name="GIF to Video"
+      title="Turn animated GIFs into MP4 videos"
+      intro="Change GIFs into MP4 videos that are usually much smaller and play everywhere. GIFs have no sound, so the videos are silent."
+      accept={{ 'image/gif': ['.gif'] }}
+      dropHint="Animated GIF files."
+      readInfo={readGifInfo}
+      processFile={processFile}
+      inspect={inspect}
+      verb={{ action: 'Make video', working: 'Making video' }}
+      steps={[{ label: 'How many times should it play?', content: <ChoiceChips label="Repeats" options={LOOPS} value={loops} onChange={setLoops} /> }]}
       faqs={[
-        { q: 'Why convert GIF to video?', a: 'MP4 files are typically 5-10x smaller than equivalent GIFs and are supported on more platforms including Twitter and Slack.' },
-        { q: 'Will the loop be preserved?', a: 'Yes, the animation is looped by default. Most video platforms auto-loop short clips.' }
+        { q: 'Why make a GIF into a video?', a: 'An MP4 is often ten times smaller than the same GIF, and many sites and phones handle videos better.' },
+        { q: 'Will there be sound?', a: 'No. GIFs have no sound, so the video is silent.' },
+        { q: 'Why is the size a pixel smaller sometimes?', a: 'Videos need an even width and height. If your GIF has an odd one, a single row or column of pixels is trimmed.' },
+        { q: 'Will the video loop by itself?', a: 'An MP4 plays the number of times you chose and then stops. Most apps let you set a video to repeat.' },
       ]}
     />
   );

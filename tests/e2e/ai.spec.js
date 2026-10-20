@@ -41,7 +41,8 @@ test.describe('AI generators (mocked OpenRouter)', () => {
       await page.getByRole('button', { name: /Generate/i }).first().click();
 
       // Result appears in the scrollable result container and replaces the placeholder.
-      const result = page.locator('.overflow-y-auto').first();
+      // The result box inside the page (the sidebars scroll too, so stay inside <main>).
+      const result = page.locator('main .overflow-y-auto').first();
       await expect(result).toContainText(MOCK_OUTPUT, { timeout: 15_000 });
       await expect(result).not.toContainText('Your generated content will appear here');
     });
@@ -59,7 +60,7 @@ test.describe('AI generators (mocked OpenRouter)', () => {
     await page.locator('textarea').first().fill('Trigger the missing-key path.');
     await page.getByRole('button', { name: /Generate/i }).first().click();
 
-    await expect(page.getByText(/API key is missing.*Settings/i)).toBeVisible();
+    await expect(page.getByText(/AI key is missing.*Settings/i)).toBeVisible();
     expect(apiCalled, 'no network call should happen without a key').toBe(false);
   });
 });

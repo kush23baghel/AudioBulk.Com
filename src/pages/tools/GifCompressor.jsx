@@ -1,109 +1,102 @@
 import { useState } from 'react';
-import ToolPageLayout from '../../components/ToolPageLayout';
-import useBulkProcessor from '../../hooks/useBulkProcessor';
-import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
+import { getFFmpeg, safeDelete } from '../../lib/ffmpeg';
+import BulkTool from '../../ui/BulkTool';
+import { ChoiceChips } from '../../ui/controls';
+import { readGifInfo, formatBytes } from '../../lib/gifInfo';
+
+const COLORS = [
+  { value: '256', label: 'Most colors (256)', hint: 'Best looking, smallest saving' },
+  { value: '128', label: 'Fewer colors (128)', hint: 'A good balance' },
+  { value: '64', label: 'Few colors (64)', hint: 'Smallest file, the picture looks a bit flatter' },
+];
+const SIZES = [
+  { value: '0', label: 'Keep size' },
+  { value: '480', label: 'Up to 480 wide' },
+  { value: '320', label: 'Up to 320 wide', hint: 'Makes the biggest difference to the file size.' },
+];
+const SPEEDS = [
+  { value: '0', label: 'Keep smoothness' },
+  { value: '12', label: 'Lower (12)' },
+  { value: '8', label: 'Lowest (8)', hint: 'Smaller file, but the movement gets choppy.' },
+];
 
 export default function GifCompressor() {
-  const [colors, setColors] = useState(128);
-  const [fps, setFps] = useState(10);
-  const [scale, setScale] = useState(100);
-  const processor = useBulkProcessor();
+  const [colors, setColors] = useState('128');
+  const [maxWidth, setMaxWidth] = useState('0');
+  const [fps, setFps] = useState('0');
 
-  const processFile = async (file, onProgress) => {
+  const inspect = (info, file) => {
+    if (!info) return null;
+    if (!info.ok) return { tone: 'warn', text: 'This does not look like a GIF your browser can read. It may be damaged.' };
+    const size = formatBytes(file.size);
+    if (colors === '256' && maxWidth === '0' && fps === '0') {
+      return { tone: 'warn', text: `${size} now. With these settings almost nothing is removed, so the file may not get smaller. Pick fewer colors, a smaller width or lower smoothness.` };
+    }
+    const bits = [];
+    if (colors !== '256') bits.push(`${colors} colors`);
+    if (maxWidth !== '0' && info.width > Number(maxWidth)) bits.push(`${maxWidth} wide instead of ${info.width}`);
+    if (fps !== '0') bits.push(`at most ${fps} pictures a second`);
+    return { tone: 'info', text: `${size} now. It will be saved with ${bits.length ? bits.join(', ') : 'the same size'}. If the new file is not smaller, your original is kept.` };
+  };
+
+  const processFile = async (file, onProgress, info) => {
     const ffmpeg = await getFFmpeg();
-    const uid = Math.random().toString(36).substring(7);
-    const inputName = `input_${uid}.gif`;
-    const paletteName = `palette_${uid}.png`;
-    const outputName = `output_compressed_${uid}.gif`;
-
+    const id = Math.random().toString(36).slice(2, 9);
+    const inputName = `input_${id}.gif`;
+    const outputName = `output_${id}.gif`;
     let progressHandler = null;
     try {
-            await ffmpeg.writeFile(inputName, await fetchFile(file));
-    onProgress(10);
+      if (info && !info.ok) throw new Error('This GIF could not be read. Try a different file.');
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
+      progressHandler = ({ progress }) => onProgress(Math.min(100, Math.max(0, progress * 100)));
+      ffmpeg.on('progress', progressHandler);
 
-    const w = scale < 100 ? `iw*${scale}/100` : 'iw';
-    const scaleFilter = `fps=${fps},scale=${w}:-1:flags=lanczos`;
+      const steps = [];
+      if (fps !== '0') steps.push(`fps=${fps}`);
+      // Only ever shrink the picture, never stretch it.
+      if (maxWidth !== '0') steps.push(`scale='min(${maxWidth},iw)':-2:flags=lanczos`);
+      steps.push('split[a][b]');
+      const filter = `[0:v]${steps.join(',')};[a]palettegen=max_colors=${colors}[p];[b][p]paletteuse`;
+      await ffmpeg.exec(['-i', inputName, '-filter_complex', filter, '-loop', '0', outputName]);
 
-    // Pass 1: palettegen
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-vf', `${scaleFilter},palettegen=max_colors=${colors}:stats_mode=diff`,
-      paletteName
-    ]);
-
-    onProgress(50);
-      progressHandler = ({ progress }) => onProgress(50 + progress * 50);
-    ffmpeg.on('progress', progressHandler);
-
-    // Pass 2: render with palette
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-i', paletteName,
-      '-filter_complex', `${scaleFilter}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5`,
-      outputName
-    ]);
-
-    const data = await ffmpeg.readFile(outputName);
-    const blob = new Blob([data.buffer], { type: 'image/gif' });
-    const baseName = file.name.replace(/\.[^.]+$/, '');
-    return { blob, name: `${baseName}_compressed.gif` };
+      const data = await ffmpeg.readFile(outputName);
+      if (!data || data.length === 0) throw new Error('Could not shrink this GIF. Try a different file.');
+      const baseName = file.name.replace(/\.[^.]+$/, '') || file.name;
+      // A bigger result is no use, so give the original back in that case.
+      if (data.length >= file.size) {
+        return { blob: file, name: `${baseName}_already_small.gif` };
+      }
+      return { blob: new Blob([data.buffer], { type: 'image/gif' }), name: `${baseName}_smaller.gif` };
     } finally {
       if (progressHandler) ffmpeg.off('progress', progressHandler);
       await safeDelete(ffmpeg, inputName);
       await safeDelete(ffmpeg, outputName);
-      await safeDelete(ffmpeg, paletteName);
     }
   };
 
-  const optionsContent = (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Max Colors: {colors}</label>
-        <input
-          type="range" min={32} max={256} step={16} value={colors}
-          onChange={e => setColors(Number(e.target.value))}
-          className="range range-xs range-sky w-full"
-        />
-        <div className="flex justify-between text-[10px] text-slate-400">
-          <span>More compression</span>
-          <span>Better quality</span>
-        </div>
-      </div>
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Frame Rate: {fps} FPS</label>
-        <input
-          type="range" min={5} max={24} value={fps}
-          onChange={e => setFps(Number(e.target.value))}
-          className="range range-xs range-sky w-full"
-        />
-      </div>
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Scale: {scale}%</label>
-        <input
-          type="range" min={25} max={100} step={5} value={scale}
-          onChange={e => setScale(Number(e.target.value))}
-          className="range range-xs range-sky w-full"
-        />
-      </div>
-    </div>
-  );
-
   return (
-    <ToolPageLayout
-      title="GIF Compressor"
-      description="Reduce animated GIF file sizes by adjusting color depth, frame rate, and dimensions using 2-pass palettegen."
-      icon="fa-file-zipper"
-      categoryName="GIF & Image Tools"
-      categoryPath="/all-tools?cat=gif-image"
-      acceptTypes={{ 'image/gif': ['.gif'] }}
-      optionsTitle="Compression Settings"
-      optionsContent={optionsContent}
-      {...processor}
-      processFileFn={processFile}
+    <BulkTool
+      path="/tools/gif-compressor"
+      name="GIF Compressor"
+      title="Make GIFs smaller"
+      intro="Shrink many GIFs at once so they load faster and are easier to send. If a GIF cannot be made smaller, you get the original back."
+      accept={{ 'image/gif': ['.gif'] }}
+      dropHint="Animated GIF files."
+      readInfo={readGifInfo}
+      processFile={processFile}
+      inspect={inspect}
+      verb={{ action: 'Shrink', working: 'Shrinking' }}
+      steps={[
+        { label: 'How many colors to keep?', content: <ChoiceChips label="Colors" options={COLORS} value={colors} onChange={setColors} /> },
+        { label: 'Make the picture smaller?', content: <ChoiceChips label="Width" options={SIZES} value={maxWidth} onChange={setMaxWidth} /> },
+        { label: 'Use fewer pictures a second?', content: <ChoiceChips label="Smoothness" options={SPEEDS} value={fps} onChange={setFps} /> },
+      ]}
       faqs={[
-        { q: 'What is the biggest factor for GIF size?', a: 'Frame rate has the biggest impact. Dropping from 25fps to 10fps can cut file size in half while still looking smooth.' },
-        { q: 'What does max colors do?', a: 'GIFs support a max of 256 colors. Reducing the palette to 64 or 128 colors significantly shrinks the file at minimal visual cost.' }
+        { q: 'What makes a GIF smaller?', a: 'Fewer colors, a smaller picture, and fewer pictures every second. Each one trades a little quality for size. A smaller width usually saves the most.' },
+        { q: 'Why did I get my original back?', a: 'Some GIFs are already very tight. If the new file would be bigger, we keep your original so you never get a worse result.' },
+        { q: 'Will it still loop?', a: 'Yes. The new GIF repeats forever.' },
+        { q: 'Are my GIFs uploaded?', a: 'No. They are shrunk inside your browser and stay on your computer.' },
       ]}
     />
   );

@@ -1,154 +1,307 @@
-import { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+﻿import { useState, useRef, useEffect, useId } from 'react';
+import { Download, Scissors, UploadCloud } from 'lucide-react';
+import ToolFrame from '../../ui/ToolFrame';
+import { Button, Card, ChoiceChips } from '../../ui/controls';
+import { downloadFiles } from '../../lib/download';
+
+const FAQS = [
+  {
+    q: 'How do I make an Instagram carousel?',
+    a: 'Choose "1 x 3 (carousel)". Your picture is cut into three side-by-side pieces. Post them in order (r1c1, r1c2, r1c3) and they join up as you swipe.',
+  },
+  {
+    q: 'Why are some pieces one pixel bigger than others?',
+    a: 'If the picture width or height cannot be shared out perfectly evenly, some pieces get one extra pixel. You will not see the difference, and no part of the picture is lost.',
+  },
+  {
+    q: 'What do the file names mean?',
+    a: 'r1c2 means row 1, column 2, counting from the top left. So name_r1c1.png is the top left piece.',
+  },
+  {
+    q: 'Is my picture uploaded anywhere?',
+    a: 'No. The picture is cut on your own device and never leaves it.',
+  },
+];
+
+const PRESETS = [
+  { value: 'carousel', label: '1 x 3 (carousel)', rows: 1, cols: 3, hint: 'One row, three columns. Made for Instagram carousels.' },
+  { value: '3x3', label: '3 x 3', rows: 3, cols: 3, hint: 'Nine pieces, like an Instagram profile grid.' },
+  { value: '2x2', label: '2 x 2', rows: 2, cols: 2, hint: 'Four equal pieces.' },
+  { value: '2x1', label: '2 x 1', rows: 1, cols: 2, hint: 'Two pieces side by side.' },
+  { value: 'custom', label: 'Custom', hint: 'Choose your own rows and columns, up to 10 each.' },
+];
+
+const MAX_SIDE = 10;
+const BIG_PIXELS = 25_000_000;
+
+// Where each cut falls. Rounding means pieces differ by at most 1 pixel.
+function cutPoints(total, parts) {
+  const points = [];
+  for (let i = 0; i <= parts; i += 1) points.push(Math.round((i * total) / parts));
+  return points;
+}
+
+function clampCount(v) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(MAX_SIDE, Math.max(1, n));
+}
 
 export default function ImageSplitter() {
-  const [imageURL, setImageURL] = useState(null);
-  const [cols, setCols] = useState(3);
-  const [rows, setRows] = useState(3);
-  const [tiles, setTiles] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const canvasRef = useRef(null);
+  const [file, setFile] = useState(null);
+  const [url, setUrl] = useState('');
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [preset, setPreset] = useState('carousel');
+  const [customRows, setCustomRows] = useState(2);
+  const [customCols, setCustomCols] = useState(2);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [pieces, setPieces] = useState([]); // { name, blob, url }
   const imgRef = useRef(null);
+  const urlRef = useRef('');
+  const piecesRef = useRef([]);
+  const inputId = useId();
+  const rowsId = useId();
+  const colsId = useId();
 
-  const handleFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageURL(URL.createObjectURL(file));
-    setTiles([]);
+  const chosen = PRESETS.find((p) => p.value === preset);
+  const rows = preset === 'custom' ? customRows : chosen.rows;
+  const cols = preset === 'custom' ? customCols : chosen.cols;
+
+  const revokePieces = () => {
+    piecesRef.current.forEach((p) => URL.revokeObjectURL(p.url));
+    piecesRef.current = [];
   };
 
-  const splitImage = async () => {
-    if (!imgRef.current || !canvasRef.current) return;
-    setIsProcessing(true);
-    setTiles([]);
+  useEffect(() => () => {
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    piecesRef.current.forEach((p) => URL.revokeObjectURL(p.url));
+  }, []);
 
-    const img = imgRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const W = img.naturalWidth;
-    const H = img.naturalHeight;
+  const clearPieces = () => {
+    revokePieces();
+    setPieces([]);
+  };
 
-    const tileW = Math.floor(W / cols);
-    const tileH = Math.floor(H / rows);
-    const newTiles = [];
-
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        canvas.width = tileW;
-        canvas.height = tileH;
-        ctx.drawImage(img, c * tileW, r * tileH, tileW, tileH, 0, 0, tileW, tileH);
-        const url = canvas.toDataURL('image/png');
-        newTiles.push({ url, row: r + 1, col: c + 1, index: r * cols + c + 1 });
-      }
+  const loadFile = (picked) => {
+    if (!picked) return;
+    if (!picked.type.startsWith('image/')) {
+      setError('That does not look like a picture. Please choose a PNG, JPG, WebP or GIF image.');
+      return;
     }
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    clearPieces();
+    const next = URL.createObjectURL(picked);
+    urlRef.current = next;
+    setError('');
+    setSize({ w: 0, h: 0 });
+    setFile(picked);
+    setUrl(next);
+  };
 
-    setTiles(newTiles);
-    setIsProcessing(false);
+  const onImageLoad = () => {
+    const img = imgRef.current;
+    if (img) setSize({ w: img.naturalWidth, h: img.naturalHeight });
+  };
+
+  const ready = Boolean(file) && size.w > 0;
+  const tooManyForSize = ready && (cols > size.w || rows > size.h);
+  const uneven = ready && !tooManyForSize && (size.w % cols !== 0 || size.h % rows !== 0);
+  const huge = ready && size.w * size.h > BIG_PIXELS;
+
+  const split = async () => {
+    if (!ready || busy || tooManyForSize) return;
+    setBusy(true);
+    setError('');
+    clearPieces();
+    try {
+      const img = imgRef.current;
+      const xs = cutPoints(size.w, cols);
+      const ys = cutPoints(size.h, rows);
+      const base = file.name.replace(/\.[^.]+$/, '');
+      const made = [];
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          const w = xs[c + 1] - xs[c];
+          const h = ys[r + 1] - ys[r];
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, xs[c], ys[r], w, h, 0, 0, w, h);
+          const blob = await new Promise((resolve) => { canvas.toBlob(resolve, 'image/png'); });
+          if (!blob) throw new Error('blob');
+          made.push({ name: `${base}_r${r + 1}c${c + 1}.png`, blob, url: URL.createObjectURL(blob) });
+        }
+      }
+      piecesRef.current = made;
+      setPieces(made);
+    } catch {
+      setError('The picture could not be cut. It may be too large for your device. Try a smaller picture.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const downloadAll = () => {
-    tiles.forEach((tile, i) => {
-      setTimeout(() => {
-        const a = document.createElement('a');
-        a.href = tile.url;
-        a.download = `tile_${tile.row}x${tile.col}.png`;
-        a.click();
-      }, i * 150);
-    });
+    downloadFiles(pieces.map((p) => ({ name: p.name, blob: p.blob })), `${file.name.replace(/\.[^.]+$/, '')}_pieces.zip`);
   };
 
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    loadFile(e.dataTransfer.files?.[0]);
+  };
+
+  const inputStyle = 'w-24 rounded-lg border border-line-strong bg-cream px-3 py-2 text-[15px] text-ink focus:outline focus:outline-3 focus:outline-wine';
+
+  const vLines = Array.from({ length: cols - 1 }, (_, i) => ((i + 1) / cols) * 100);
+  const hLines = Array.from({ length: rows - 1 }, (_, i) => ((i + 1) / rows) * 100);
+
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-12 space-y-8">
-      <div className="text-sm breadcrumbs text-slate-400">
-        <ul>
-          <li><Link to="/" className="hover:text-white">Home</Link></li>
-          <li><Link to="/all-tools?cat=gif-image" className="hover:text-white">GIF & Image Tools</Link></li>
-          <li className="text-sky-600 font-medium">Image Splitter</li>
-        </ul>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 border border-sky-200 text-sky-600">
-          <i className="fa-solid fa-border-all text-lg"></i>
-        </div>
-        <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight font-outfit">Image Splitter</h1>
-          <p className="text-slate-400 text-sm">Slice a single image into a grid of equal tiles for carousel uploads or Instagram grids.</p>
-        </div>
-      </div>
-
-      {!imageURL ? (
-        <div
-          className="rounded-2xl border-2 border-dashed border-white/10 hover:border-sky-500/50 bg-white/5 p-20 text-center cursor-pointer transition-all"
-          onClick={() => document.getElementById('splitter-file').click()}
-        >
-          <i className="fa-solid fa-border-all text-5xl text-slate-400 mb-4"></i>
-          <p className="text-slate-400 text-sm">Click to upload an image to split</p>
-          <input id="splitter-file" type="file" accept="image/*" className="hidden" onChange={handleFile} />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-4">
-            <img ref={imgRef} src={imageURL} alt="Source" className="w-full rounded-xl border border-white/10 object-contain max-h-80" />
-            <canvas ref={canvasRef} className="hidden" />
-            {tiles.length > 0 && (
-              <div>
-                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-3">Tiles ({rows}×{cols} = {tiles.length} pieces)</p>
-                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                  {tiles.map(tile => (
-                    <div key={tile.index} className="relative group">
-                      <img src={tile.url} alt={`Tile ${tile.index}`} className="w-full rounded-lg border border-white/10" />
-                      <a
-                        href={tile.url}
-                        download={`tile_${tile.row}x${tile.col}.png`}
-                        className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
-                      >
-                        <i className="fa-solid fa-download text-white text-lg"></i>
-                      </a>
-                      <p className="text-center text-[9px] text-slate-400 mt-0.5">{tile.row},{tile.col}</p>
-                    </div>
-                  ))}
+    <ToolFrame
+      path="/tools/image-splitter"
+      name="Image Splitter"
+      title="Cut a picture into a grid of pieces"
+      intro="Add one picture, choose how many rows and columns, and check the lines on the preview. Then press Split picture."
+      faqs={FAQS}
+    >
+      <div className="space-y-6">
+        {!file ? (
+          <label
+            htmlFor={inputId}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            className={`flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed px-6 py-14 text-center transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-wine ${
+              dragging ? 'border-wine bg-wine-soft' : 'border-line-strong bg-paper hover:bg-sand'
+            }`}
+          >
+            <UploadCloud size={36} className="text-wine" aria-hidden="true" />
+            <span className="text-lg font-bold text-ink">Drop a picture here, or click to choose one</span>
+            <span className="text-sm text-muted">PNG, JPG, WebP or GIF. One picture at a time.</span>
+            <input
+              id={inputId}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => { loadFile(e.target.files?.[0]); e.target.value = ''; }}
+            />
+          </label>
+        ) : (
+          <>
+            <Card className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-bold"><span className="mr-2 text-wine">1</span>Choose the grid</h2>
+                <label htmlFor={inputId} className="cursor-pointer text-sm font-semibold text-wine underline">
+                  Choose another picture
+                  <input
+                    id={inputId}
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(e) => { loadFile(e.target.files?.[0]); e.target.value = ''; }}
+                  />
+                </label>
+              </div>
+              <ChoiceChips
+                label="Grid"
+                options={PRESETS.map(({ value, label, hint }) => ({ value, label, hint }))}
+                value={preset}
+                onChange={(v) => { setPreset(v); clearPieces(); }}
+              />
+              {preset === 'custom' && (
+                <div className="flex flex-wrap items-end gap-4">
+                  <div className="space-y-1">
+                    <label htmlFor={rowsId} className="text-sm font-semibold text-ink">Rows (1 to 10)</label>
+                    <input
+                      id={rowsId}
+                      type="number"
+                      min="1"
+                      max={MAX_SIDE}
+                      value={customRows}
+                      onChange={(e) => { setCustomRows(clampCount(e.target.value)); clearPieces(); }}
+                      className={`block ${inputStyle}`}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor={colsId} className="text-sm font-semibold text-ink">Columns (1 to 10)</label>
+                    <input
+                      id={colsId}
+                      type="number"
+                      min="1"
+                      max={MAX_SIDE}
+                      value={customCols}
+                      onChange={(e) => { setCustomCols(clampCount(e.target.value)); clearPieces(); }}
+                      className={`block ${inputStyle}`}
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-5">
-            <div className="glass-card rounded-2xl border border-white/10 p-5 space-y-5">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-outfit border-b border-white/10 pb-2">Grid Settings</h3>
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-300">Columns: {cols}</label>
-                <input type="range" min={1} max={6} value={cols} onChange={e => { setCols(Number(e.target.value)); setTiles([]); }}
-                  className="range range-xs range-sky w-full" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-300">Rows: {rows}</label>
-                <input type="range" min={1} max={6} value={rows} onChange={e => { setRows(Number(e.target.value)); setTiles([]); }}
-                  className="range range-xs range-sky w-full" />
-              </div>
-              <div className="rounded-xl bg-[#0b1426]/80 backdrop-blur-md shadow-inner border border-white/10 p-3 text-center">
-                <p className="text-sm text-white font-bold">{rows * cols} tiles</p>
-                <p className="text-[10px] text-slate-400">{rows} rows × {cols} columns</p>
-              </div>
-              <button
-                onClick={splitImage}
-                disabled={isProcessing}
-                className="w-full btn bg-sky-500 hover:bg-sky-600 border-0 text-white font-semibold rounded-xl gap-2"
-              >
-                <i className="fa-solid fa-border-all"></i>
-                {isProcessing ? 'Splitting...' : 'Split Image'}
-              </button>
-              {tiles.length > 0 && (
-                <button onClick={downloadAll} className="w-full btn bg-emerald-500 hover:bg-emerald-600 border-0 text-white rounded-xl gap-2">
-                  <i className="fa-solid fa-download"></i> Download All Tiles
-                </button>
               )}
-            </div>
-            <button onClick={() => { setImageURL(null); setTiles([]); }} className="w-full btn btn-outline btn-sm border-white/10 text-slate-400 rounded-xl">
-              Upload Different Image
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+              <p className="truncate text-sm text-muted">
+                {file.name}{ready ? ` Â· ${size.w} x ${size.h} pixels Â· ${rows * cols} piece${rows * cols === 1 ? '' : 's'}` : ''}
+              </p>
+              <div className="relative mx-auto w-fit max-w-full overflow-hidden rounded-xl bg-sunken">
+                <img
+                  ref={imgRef}
+                  src={url}
+                  alt="Your picture with grid lines on top"
+                  onLoad={onImageLoad}
+                  onError={() => setError('Your browser cannot open this picture. Try a PNG or JPG file.')}
+                  className="block max-h-[420px] max-w-full"
+                />
+                {ready && (
+                  <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+                    {vLines.map((p) => (
+                      <div key={`v${p}`} className="absolute inset-y-0 w-0 border-l-2 border-dashed border-white" style={{ left: `${p}%`, filter: 'drop-shadow(0 0 1px #000)' }} />
+                    ))}
+                    {hLines.map((p) => (
+                      <div key={`h${p}`} className="absolute inset-x-0 h-0 border-t-2 border-dashed border-white" style={{ top: `${p}%`, filter: 'drop-shadow(0 0 1px #000)' }} />
+                    ))}
+                  </div>
+                )}
+              </div>
+              {tooManyForSize && <p className="rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">This picture is too small for that many pieces. Choose fewer rows or columns.</p>}
+              {uneven && <p className="rounded-lg bg-sand px-4 py-3 text-sm text-ink">The picture does not divide perfectly evenly, so some pieces will be 1 pixel bigger than others. Nothing is lost.</p>}
+              {huge && <p className="rounded-lg bg-sand px-4 py-3 text-sm text-ink">This picture is very large, so splitting may be slow and use a lot of memory on your device.</p>}
+            </Card>
+
+            <Card className="space-y-4">
+              <h2 className="text-lg font-bold"><span className="mr-2 text-wine">2</span>Split the picture</h2>
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={split} disabled={!ready || busy || tooManyForSize}>
+                  <Scissors size={18} aria-hidden="true" />
+                  {busy ? 'Splitting...' : 'Split picture'}
+                </Button>
+                {pieces.length > 0 && (
+                  <Button variant="secondary" onClick={downloadAll}>
+                    <Download size={18} aria-hidden="true" />
+                    Download all (.zip)
+                  </Button>
+                )}
+              </div>
+              {error && <p className="rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">{error}</p>}
+              {pieces.length > 0 && (
+                <>
+                  <p className="text-sm text-muted" role="status">Done. {pieces.length} piece{pieces.length === 1 ? '' : 's'} ready. Tap a piece to save just that one.</p>
+                  <ul className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(cols, 4)}, minmax(0, 1fr))` }}>
+                    {pieces.map((p) => (
+                      <li key={p.name} className="space-y-1">
+                        <a href={p.url} download={p.name} className="block overflow-hidden rounded-lg border border-line bg-sunken">
+                          <img src={p.url} alt={p.name} className="block w-full" />
+                        </a>
+                        <p className="truncate text-xs text-muted">{p.name}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </Card>
+          </>
+        )}
+        {!file && error && <p className="rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">{error}</p>}
+      </div>
+    </ToolFrame>
   );
 }
+

@@ -1,185 +1,376 @@
-import { useState, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+﻿import { useState, useRef, useEffect, useId } from 'react';
+import { Copy, Check, UploadCloud } from 'lucide-react';
+import ToolFrame from '../../ui/ToolFrame';
+import { Card } from '../../ui/controls';
 
-export default function ColorPicker() {
-  const [imageURL, setImageURL] = useState(null);
-  const [palette, setPalette] = useState([]);
-  const [hoveredColor, setHoveredColor] = useState(null);
-  const [copied, setCopied] = useState('');
-  const canvasRef = useRef(null);
-  const imgRef = useRef(null);
+const FAQS = [
+  {
+    q: 'What is a HEX code?',
+    a: 'A HEX code is a short way to write a color, like #FF8800. It is used in websites, design apps and social media tools. The six characters are the amounts of red, green and blue.',
+  },
+  {
+    q: 'What is RGB?',
+    a: 'RGB lists how much red, green and blue light make the color, each from 0 (none) to 255 (full). So rgb(255, 0, 0) is pure red. HSL describes the same color as hue (the color on the wheel), saturation (how vivid) and lightness (how light).',
+  },
+  {
+    q: 'How are the "Main colors" found?',
+    a: 'The picture is shrunk to a small copy, and similar colors are grouped together. Each group is shown as one color. It is a good guide, but a different method could give slightly different results.',
+  },
+  {
+    q: 'Is my picture uploaded anywhere?',
+    a: 'No. Everything happens on your own device.',
+  },
+];
 
-  const handleFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setImageURL(url);
-    setPalette([]);
-  };
+const clamp255 = (n) => Math.max(0, Math.min(255, Math.round(n)));
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
-    const url = URL.createObjectURL(file);
-    setImageURL(url);
-    setPalette([]);
-  };
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b].map((v) => clamp255(v).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+}
 
-  const extractPalette = useCallback(() => {
-    if (!imgRef.current || !canvasRef.current) return;
-    const img = imgRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    ctx.drawImage(img, 0, 0);
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
 
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    const colorMap = {};
+function rgbToHsl(r, g, b) {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  let s = 0;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === rn) h = ((gn - bn) / d) % 6;
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return [Math.round(h), Math.round(s * 100), Math.round(l * 100)];
+}
 
-    // Sample every 10th pixel for performance
-    for (let i = 0; i < data.length; i += 40) {
-      const r = Math.round(data[i] / 32) * 32;
-      const g = Math.round(data[i + 1] / 32) * 32;
-      const b = Math.round(data[i + 2] / 32) * 32;
-      const alpha = data[i + 3];
-      if (alpha < 128) continue; // skip transparent
-      const key = `${r},${g},${b}`;
-      colorMap[key] = (colorMap[key] || 0) + 1;
+// Median cut: repeatedly split the box with the widest colour range at its median.
+// `pixels` is a flat RGBA array (like canvas data). Transparent pixels are skipped.
+function medianCutPalette(pixels, count = 6) {
+  const colors = [];
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] >= 125) colors.push([pixels[i], pixels[i + 1], pixels[i + 2]]);
+  }
+  if (colors.length === 0) return [];
+  const boxes = [colors];
+  while (boxes.length < count) {
+    let best = -1;
+    let bestRange = 0;
+    let bestChannel = 0;
+    boxes.forEach((box, idx) => {
+      if (box.length < 2) return;
+      for (let ch = 0; ch < 3; ch += 1) {
+        let lo = 255;
+        let hi = 0;
+        for (const c of box) {
+          if (c[ch] < lo) lo = c[ch];
+          if (c[ch] > hi) hi = c[ch];
+        }
+        if (hi - lo > bestRange) { bestRange = hi - lo; best = idx; bestChannel = ch; }
+      }
+    });
+    if (best < 0) break; // nothing left to split
+    const box = boxes[best].slice().sort((a, b) => a[bestChannel] - b[bestChannel]);
+    const mid = Math.floor(box.length / 2);
+    boxes.splice(best, 1, box.slice(0, mid), box.slice(mid));
+  }
+  return boxes
+    .filter((box) => box.length > 0)
+    .map((box) => {
+      const sum = [0, 0, 0];
+      box.forEach((c) => { sum[0] += c[0]; sum[1] += c[1]; sum[2] += c[2]; });
+      return { rgb: sum.map((v) => Math.round(v / box.length)), size: box.length };
+    })
+    .sort((a, b) => b.size - a.size)
+    .reduce((merged, item) => {
+      // A cut can fall inside one solid color; merge boxes that came out (almost) the same.
+      const twin = merged.find((m) => Math.hypot(m.rgb[0] - item.rgb[0], m.rgb[1] - item.rgb[1], m.rgb[2] - item.rgb[2]) < 16);
+      if (twin) twin.size += item.size;
+      else merged.push({ rgb: item.rgb, size: item.size });
+      return merged;
+    }, [])
+    .map((b) => b.rgb);
+}
+
+function CopyButton({ text, label }) {
+  const [state, setState] = useState('idle'); // idle | copied | failed
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setState('copied');
+    } catch {
+      setState('failed');
     }
-
-    // Sort by frequency and take top 12
-    const sorted = Object.entries(colorMap)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 12)
-      .map(([key]) => {
-        const [r, g, b] = key.split(',').map(Number);
-        const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
-        return { r, g, b, hex };
-      });
-
-    setPalette(sorted);
-  }, []);
-
-  const pickColor = useCallback((e) => {
-    if (!canvasRef.current || !imgRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const rect = imgRef.current.getBoundingClientRect();
-    const scaleX = imgRef.current.naturalWidth / imgRef.current.offsetWidth;
-    const scaleY = imgRef.current.naturalHeight / imgRef.current.offsetHeight;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-    const pixel = ctx.getImageData(x, y, 1, 1).data;
-    const hex = '#' + [pixel[0], pixel[1], pixel[2]].map(v => v.toString(16).padStart(2, '0')).join('');
-    setHoveredColor(hex);
-  }, []);
-
-  const copyColor = (hex) => {
-    navigator.clipboard.writeText(hex);
-    setCopied(hex);
-    setTimeout(() => setCopied(''), 2000);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState('idle'), 1800);
   };
-
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-12 space-y-8">
-      <div className="text-sm breadcrumbs text-slate-400">
-        <ul>
-          <li><Link to="/" className="hover:text-white">Home</Link></li>
-          <li><Link to="/all-tools?cat=gif-image" className="hover:text-white">GIF & Image Tools</Link></li>
-          <li className="text-sky-600 font-medium">Color Picker</li>
-        </ul>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 border border-sky-200 text-sky-600">
-          <i className="fa-solid fa-eye-dropper text-lg"></i>
-        </div>
-        <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight font-outfit">Color Picker & Palette</h1>
-          <p className="text-slate-400 text-sm">Upload an image to extract its color palette or pick specific pixel colors.</p>
-        </div>
-      </div>
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={`Copy ${label}`}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line-strong bg-paper px-3 py-1.5 text-sm font-semibold text-ink hover:bg-sand"
+    >
+      {state === 'copied' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+      <span role="status">{state === 'copied' ? 'Copied' : state === 'failed' ? 'Select and copy by hand' : 'Copy'}</span>
+    </button>
+  );
+}
 
-      {!imageURL ? (
-        <div
-          onDrop={handleDrop}
-          onDragOver={e => e.preventDefault()}
-          className="rounded-2xl border-2 border-dashed border-white/10 hover:border-sky-500/50 bg-white/5 p-20 text-center cursor-pointer transition-all"
-          onClick={() => document.getElementById('color-file-input').click()}
-        >
-          <i className="fa-solid fa-image text-5xl text-slate-400 mb-4"></i>
-          <p className="text-slate-400 text-sm">Drop an image here, or click to upload</p>
-          <p className="text-slate-400 text-xs mt-1">Supports PNG, JPG, WebP, GIF</p>
-          <input id="color-file-input" type="file" accept="image/*" className="hidden" onChange={handleFile} />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="space-y-4">
-            <div className="relative rounded-xl overflow-hidden border border-white/10 cursor-crosshair">
-              <img
-                ref={imgRef}
-                src={imageURL}
-                alt="Uploaded"
-                onLoad={extractPalette}
-                onMouseMove={pickColor}
-                className="w-full object-contain max-h-96"
-              />
-              {hoveredColor && (
-                <div className="absolute top-2 left-2 flex items-center gap-2 bg-slate-950/90 border border-white/10 rounded-lg px-3 py-1.5">
-                  <div className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: hoveredColor }}></div>
-                  <span className="text-xs font-mono text-white">{hoveredColor}</span>
-                </div>
-              )}
-            </div>
-            <canvas ref={canvasRef} className="hidden" />
-            {hoveredColor && (
-              <button
-                onClick={() => copyColor(hoveredColor)}
-                className="w-full btn bg-sky-500 hover:bg-sky-600 border-0 text-white rounded-xl gap-2"
-              >
-                <i className="fa-solid fa-copy"></i>
-                {copied === hoveredColor ? 'Copied!' : `Copy ${hoveredColor}`}
-              </button>
-            )}
-            <button
-              onClick={() => { setImageURL(null); setPalette([]); }}
-              className="w-full btn btn-outline btn-sm rounded-xl text-slate-400 border-white/10"
-            >
-              Upload Another Image
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider font-outfit">Extracted Palette</h3>
-            <div className="grid grid-cols-3 gap-3">
-              {palette.map((c) => (
-                <button
-                  key={c.hex}
-                  onClick={() => copyColor(c.hex)}
-                  className="group relative rounded-xl overflow-hidden border border-white/10 hover:border-white/30 transition-all"
-                  title={c.hex}
-                >
-                  <div className="h-16" style={{ backgroundColor: c.hex }}></div>
-                  <div className="px-2 py-1.5 bg-slate-900/90 text-center">
-                    <p className="text-[10px] font-mono text-slate-300">{c.hex}</p>
-                    <p className="text-[9px] text-slate-400">rgb({c.r},{c.g},{c.b})</p>
-                  </div>
-                  {copied === c.hex && (
-                    <div className="absolute inset-0 bg-sky-500/20 flex items-center justify-center">
-                      <i className="fa-solid fa-check text-sky-600 text-xl"></i>
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-            {palette.length === 0 && (
-              <p className="text-slate-400 text-sm text-center py-8">Loading palette...</p>
-            )}
-          </div>
-        </div>
-      )}
+function ColorReadout({ rgb }) {
+  const hex = rgbToHex(...rgb);
+  const [h, s, l] = rgbToHsl(...rgb);
+  const rows = [
+    { label: 'HEX', value: hex },
+    { label: 'RGB', value: `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` },
+    { label: 'HSL', value: `hsl(${h}, ${s}%, ${l}%)` },
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="h-16 rounded-xl border border-line-strong" style={{ backgroundColor: hex }} role="img" aria-label={`Color ${hex}`} />
+      <ul className="space-y-2">
+        {rows.map((r) => (
+          <li key={r.label} className="flex items-center justify-between gap-3">
+            <span className="min-w-0 text-[15px] text-ink"><span className="mr-2 inline-block w-10 font-bold">{r.label}</span><span className="break-all font-mono">{r.value}</span></span>
+            <CopyButton text={r.value} label={r.label} />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
+
+const MAX_SAMPLE = 4000;
+
+export default function ColorPicker() {
+  const [file, setFile] = useState(null);
+  const [url, setUrl] = useState('');
+  const [picked, setPicked] = useState(null); // [r, g, b]
+  const [marker, setMarker] = useState(null); // { x, y } in percent
+  const [palette, setPalette] = useState([]);
+  const [manual, setManual] = useState('#8B2E4A');
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState('');
+  const imgRef = useRef(null);
+  const sampleRef = useRef(null); // canvas with the picture at (nearly) full size
+  const urlRef = useRef('');
+  const inputId = useId();
+  const manualId = useId();
+
+  useEffect(() => () => {
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+  }, []);
+
+  const loadFile = (f) => {
+    if (!f) return;
+    if (!f.type.startsWith('image/')) {
+      setError('That does not look like a picture. Please choose a PNG, JPG, WebP or GIF image.');
+      return;
+    }
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    const next = URL.createObjectURL(f);
+    urlRef.current = next;
+    sampleRef.current = null;
+    setError('');
+    setPicked(null);
+    setMarker(null);
+    setPalette([]);
+    setFile(f);
+    setUrl(next);
+  };
+
+  const onImageLoad = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    try {
+      const scale = Math.min(1, MAX_SAMPLE / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      sampleRef.current = canvas;
+      // Small copy for the palette.
+      const small = document.createElement('canvas');
+      const k = Math.min(1, 100 / Math.max(canvas.width, canvas.height));
+      small.width = Math.max(1, Math.round(canvas.width * k));
+      small.height = Math.max(1, Math.round(canvas.height * k));
+      const sctx = small.getContext('2d', { willReadFrequently: true });
+      sctx.drawImage(canvas, 0, 0, small.width, small.height);
+      setPalette(medianCutPalette(sctx.getImageData(0, 0, small.width, small.height).data, 6));
+    } catch {
+      setError('Colors could not be read from this picture. Try a PNG or JPG file.');
+    }
+  };
+
+  const pick = (e) => {
+    const img = imgRef.current;
+    const canvas = sampleRef.current;
+    if (!img || !canvas) return;
+    const rect = img.getBoundingClientRect();
+    const fx = (e.clientX - rect.left) / rect.width;
+    const fy = (e.clientY - rect.top) / rect.height;
+    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+    const x = Math.min(canvas.width - 1, Math.floor(fx * canvas.width));
+    const y = Math.min(canvas.height - 1, Math.floor(fy * canvas.height));
+    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(x, y, 1, 1).data;
+    if (d[3] === 0) {
+      setError('That spot is see-through, so it has no color. Try another spot.');
+      return;
+    }
+    setError('');
+    setPicked([d[0], d[1], d[2]]);
+    setMarker({ x: fx * 100, y: fy * 100 });
+  };
+
+  const manualRgb = hexToRgb(manual);
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    loadFile(e.dataTransfer.files?.[0]);
+  };
+
+  return (
+    <ToolFrame
+      path="/tools/color-picker"
+      name="Color Picker"
+      title="Find the exact colors in a picture"
+      intro="Add a picture and tap anywhere on it to get that color's code. You also get the main colors of the picture."
+      faqs={FAQS}
+    >
+      <div className="space-y-6">
+        {!file ? (
+          <label
+            htmlFor={inputId}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            className={`flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed px-6 py-14 text-center transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-wine ${
+              dragging ? 'border-wine bg-wine-soft' : 'border-line-strong bg-paper hover:bg-sand'
+            }`}
+          >
+            <UploadCloud size={36} className="text-wine" aria-hidden="true" />
+            <span className="text-lg font-bold text-ink">Drop a picture here, or click to choose one</span>
+            <span className="text-sm text-muted">PNG, JPG, WebP or GIF. One picture at a time.</span>
+            <input
+              id={inputId}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => { loadFile(e.target.files?.[0]); e.target.value = ''; }}
+            />
+          </label>
+        ) : (
+          <>
+            <Card className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-bold"><span className="mr-2 text-wine">1</span>Tap the picture to pick a color</h2>
+                <label htmlFor={inputId} className="cursor-pointer text-sm font-semibold text-wine underline">
+                  Choose another picture
+                  <input
+                    id={inputId}
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(e) => { loadFile(e.target.files?.[0]); e.target.value = ''; }}
+                  />
+                </label>
+              </div>
+              <div className="relative mx-auto w-fit max-w-full overflow-hidden rounded-xl bg-sunken">
+                <img
+                  ref={imgRef}
+                  src={url}
+                  alt="Your picture. Tap or click anywhere to pick a color."
+                  onLoad={onImageLoad}
+                  onError={() => setError('Your browser cannot open this picture. Try a PNG or JPG file.')}
+                  onClick={pick}
+                  draggable={false}
+                  className="block max-h-[480px] max-w-full cursor-crosshair"
+                />
+                {marker && (
+                  <span
+                    className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1.5px_#000]"
+                    style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+                    aria-hidden="true"
+                  />
+                )}
+              </div>
+              {error && <p className="rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">{error}</p>}
+              {picked ? <ColorReadout rgb={picked} /> : <p className="text-sm text-muted">No color picked yet. Tap a spot on the picture.</p>}
+            </Card>
+
+            <Card className="space-y-4">
+              <h2 className="text-lg font-bold"><span className="mr-2 text-wine">2</span>Main colors</h2>
+              {palette.length > 0 ? (
+                <ul className="space-y-2">
+                  {palette.map((c) => {
+                    const hex = rgbToHex(...c);
+                    return (
+                      <li key={hex} className="flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setPicked(c)}
+                          className="flex min-w-0 items-center gap-3 text-left"
+                          aria-label={`Show details for ${hex}`}
+                        >
+                          <span className="h-9 w-9 shrink-0 rounded-lg border border-line-strong" style={{ backgroundColor: hex }} />
+                          <span className="font-mono text-[15px] text-ink">{hex}</span>
+                        </button>
+                        <CopyButton text={hex} label={hex} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted">Looking for the main colors...</p>
+              )}
+            </Card>
+          </>
+        )}
+
+        <Card className="space-y-4">
+          <h2 className="text-lg font-bold">{file ? <span className="mr-2 text-wine">3</span> : null}Check a color by hand</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <label htmlFor={manualId} className="text-sm font-semibold text-ink">Pick a color</label>
+            <input
+              id={manualId}
+              type="color"
+              value={manualRgb ? rgbToHex(...manualRgb).toLowerCase() : '#000000'}
+              onChange={(e) => setManual(e.target.value.toUpperCase())}
+              className="h-10 w-16 cursor-pointer rounded-lg border border-line-strong bg-cream"
+            />
+            <input
+              type="text"
+              aria-label="Type a HEX code"
+              value={manual}
+              onChange={(e) => setManual(e.target.value)}
+              className="w-32 rounded-lg border border-line-strong bg-cream px-3 py-2 font-mono text-[15px] text-ink focus:outline focus:outline-3 focus:outline-wine"
+            />
+          </div>
+          {manualRgb
+            ? <ColorReadout rgb={manualRgb} />
+            : <p className="rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">Type a HEX code with 6 characters, like #FF8800.</p>}
+          <p className="text-sm text-muted">
+            HEX is the color written as six characters (red, green, blue). RGB writes the same color as three numbers from 0 to 255. Websites and design apps accept both.
+          </p>
+        </Card>
+      </div>
+    </ToolFrame>
+  );
+}
+
